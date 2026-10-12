@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Button } from "@/components/ui/button";
+import { Nav } from "@/components/nav";
 
 export const instant = false;
 
-export default async function Home() {
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -25,16 +25,9 @@ export default async function Home() {
   }
 
   return (
-    <main className="p-6 space-y-4">
-      <h1 className="text-2xl font-bold">CMG</h1>
-      <p>
-        {profile?.full_name} · როლი: <b>{profile?.role}</b>
-      </p>
-      <form action={signOut}>
-        <Button type="submit" variant="outline">
-          გასვლა
-        </Button>
-      </form>
-    </main>
+    <div className="min-h-screen md:flex">
+      <Nav name={profile?.full_name ?? ""} role={profile?.role ?? ""} signOut={signOut} />
+      <main className="flex-1 p-4 pb-24 md:p-8">{children}</main>
+    </div>
   );
 }
