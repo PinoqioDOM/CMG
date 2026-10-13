@@ -1,10 +1,12 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { Nav } from "@/components/nav";
 
-export const instant = false;
+async function Shell({ children }: { children: React.ReactNode }) {
+  await connection();
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -29,5 +31,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Nav name={profile?.full_name ?? ""} role={profile?.role ?? ""} signOut={signOut} />
       <main className="flex-1 p-4 pb-24 md:p-8">{children}</main>
     </div>
+  );
+}
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div className="p-6 text-muted-foreground">იტვირთება...</div>}>
+      <Shell>{children}</Shell>
+    </Suspense>
   );
 }
