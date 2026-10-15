@@ -52,3 +52,53 @@ export async function updateEmployee(id: string, formData: FormData) {
   revalidatePath("/operations");
   return { ok: true };
 }
+
+export async function createEmployees(formData: FormData) {
+  const position = z
+    .enum(["housekeeper", "groundskeeper", "gardener", "security", "other"])
+    .safeParse(formData.get("position"));
+  if (!position.success) return { error: "არასწორი პოზიცია" };
+
+  const names = Array.from(
+    new Set(
+      String(formData.get("names") ?? "")
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
+  if (names.length === 0) return { error: "ჩაწერე მინიმუმ ერთი სახელი" };
+  if (names.length > 50 || names.some((n) => n.length > 120)) {
+    return { error: "ძალიან ბევრი ან ძალიან გრძელი სახელი" };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("employees")
+    .insert(names.map((full_name) => ({ full_name, position: position.data })))
+    .select("id");
+  if (error) return { error: "ვერ შეინახა: " + error.message };
+  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
+
+  revalidatePath("/staff");
+  revalidatePath("/operations");
+  return { ok: true };
+}
+
+export async function deleteEmployees(ids: string[]) {
+  const parsed = z.array(z.string().uuid()).min(1).max(100).safeParse(ids);
+  if (!parsed.success) return { error: "არასწორი მონაცემი" };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("employees")
+    .delete()
+    .in("id", parsed.data)
+    .select("id");
+  if (error) return { error: "ვერ წაიშალა: " + error.message };
+  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
+
+  revalidatePath("/staff");
+  revalidatePath("/operations");
+  return { ok: true };
+}
