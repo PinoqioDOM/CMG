@@ -30,3 +30,31 @@ export const positionLabels: Record<string, string> = {
   security: "დაცვა",
   other: "სხვა",
 };
+
+export const paymentStatusLabels: Record<string, string> = {
+  paid: "გადახდილი",
+  partial: "ნაწილობრივ",
+  overdue: "ვადაგადაცილებული",
+  pending: "მოლოდინში",
+};
+
+export const paymentMethodLabels: Record<string, string> = {
+  cash: "ნაღდი",
+  transfer: "გადარიცხვა",
+  invoice: "ინვოისით",
+};
+
+export const monthNames = [
+  "იანვარი",
+  "თებერვალი",
+  "მარტი",
+  "აპრილი",
+  "მაისი",
+  "ივნისი",
+  "ივლისი",
+  "აგვისტო",
+  "სექტემბერი",
+  "ოქტომბერი",
+  "ნოემბერი",
+  "დეკემბერი",
+];
