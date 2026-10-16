@@ -58,3 +58,8 @@ export const monthNames = [
   "ნოემბერი",
   "დეკემბერი",
 ];
+
+export const frequencyLabels: Record<string, string> = {
+  daily: "დღიური",
+  monthly: "თვიური",
+};
