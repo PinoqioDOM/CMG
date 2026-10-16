@@ -27,7 +27,7 @@ export const positionLabels: Record<string, string> = {
   housekeeper: "დიასახლისი",
   groundskeeper: "მეეზოვე",
   gardener: "მებაღე",
-  security: "დაცვა",
+  security: "უსაფრთოხება",
   other: "სხვა",
 };
 

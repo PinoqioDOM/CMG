@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 
 const items = [
   { href: "/", label: "მთავარი", icon: LayoutDashboard },
-  { href: "/operations", label: "ოპერაციები", icon: ListTodo },
+  { href: "/operations", label: "კვირის გეგმა", icon: ListTodo },
   { href: "/finance", label: "ფინანსები", icon: Wallet },
   { href: "/staff", label: "პერსონალი", icon: Users },
-  { href: "/services", label: "სერვისები", icon: Sparkles },
+  { href: "/services", label: "დასუფთავება", icon: Sparkles },
   { href: "/documents", label: "დოკუმენტები", icon: FolderOpen },
 ];
 
