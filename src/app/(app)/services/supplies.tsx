@@ -91,6 +91,23 @@ export function Supplies({
         >
           შეკვეთის კოპირება
         </Button>
+
+        <a
+          href="/services/supplies/export"
+          className={`inline-flex h-11 items-center rounded-md border px-3 text-sm ${
+            order.length === 0 ? "pointer-events-none opacity-50" : ""
+          }`}
+        >
+          Excel ჩამოტვირთვა
+        </a>
+        <a
+          href="/services/supplies/export?photos=0"
+          className={`inline-flex h-11 items-center rounded-md border px-3 text-sm ${
+            order.length === 0 ? "pointer-events-none opacity-50" : ""
+          }`}
+        >
+          ფოტოების გარეშე
+        </a>
       </div>
 
       <div className="space-y-2">

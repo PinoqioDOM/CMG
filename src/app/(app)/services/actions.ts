@@ -417,3 +417,43 @@ export async function reopenPlan(id: string) {
   revalidatePath("/services", "layout");
   return { ok: true };
 }
+
+export async function moveTemplate(
+  position: string,
+  id: string,
+  frequency: string,
+  orderedIds: string[]
+) {
+  const p = z.string().trim().min(1).max(60).safeParse(position);
+  const i = uuid.safeParse(id);
+  const f = z.enum(["daily", "weekly", "monthly"]).safeParse(frequency);
+  const ids = z.array(uuid).min(1).max(200).safeParse(orderedIds);
+  if (!p.success || !i.success || !f.success || !ids.success) {
+    return { error: "არასწორი მონაცემი" };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("checklist_templates")
+    .update({ frequency: f.data })
+    .eq("id", i.data)
+    .eq("position", p.data)
+    .select("id");
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
+
+  const results = await Promise.all(
+    ids.data.map((tid, idx) =>
+      supabase
+        .from("checklist_templates")
+        .update({ sort_order: idx + 1 })
+        .eq("id", tid)
+        .eq("position", p.data)
+    )
+  );
+  const bad = results.find((r) => r.error);
+  if (bad?.error) return { error: bad.error.message };
+
+  revalidatePath("/services");
+  return { ok: true };
+}

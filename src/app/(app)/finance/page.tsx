@@ -130,6 +130,15 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
           >
             Excel: ყველა
           </a>
+
+          <a
+            href="https://client.asg.ge/"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-11 items-center rounded-md border px-3 text-sm"
+          >
+            ASG ↗
+          </a>
         </div>
       }
     />
