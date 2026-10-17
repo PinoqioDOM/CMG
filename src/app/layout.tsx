@@ -14,6 +14,9 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "CMG - Simetria Park",
+  icons: {
+    icon: "/CMG.jpg",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
