@@ -72,3 +72,9 @@ export const frequencyLabels: Record<string, string> = {
   weekly: "კვირეული",
   monthly: "თვიური",
 };
+
+export const relationLabels: Record<string, string> = {
+  owner: "მესაკუთრე",
+  tenant: "მობინადრე",
+  contact: "კონტაქტი",
+};

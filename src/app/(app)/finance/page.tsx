@@ -3,12 +3,20 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/data-table";
-import { monthNames, paymentMethodLabels, paymentStatusLabels } from "@/lib/labels";
-import { PaymentDialog } from "./payment-dialog";
+import { monthNames } from "@/lib/labels";
 import { GenerateButton } from "./generate-button";
+import { PaymentsTable, type PayRow } from "./payments-table";
 
-type SearchParams = Promise<{ tab?: string; ym?: string; status?: string; type?: string }>;
+type SearchParams = Promise<{
+  tab?: string;
+  ym?: string;
+  status?: string;
+  type?: string;
+  q?: string;
+}>;
 
 type Prop = { id: string; type: "apartment" | "house"; number: string };
 type Pay = {
@@ -37,26 +45,11 @@ const num = (s: string) => parseInt(s.replace(/\D/g, ""), 10) || 0;
 const sortProps = (a: Prop, b: Prop) =>
   a.type === b.type ? num(a.number) - num(b.number) : a.type === "apartment" ? -1 : 1;
 const money = (n: number) => `${(Math.round(n * 100) / 100).toFixed(2)} ₾`;
-const dmy = (s: string | null) => (s ? s.split("-").reverse().join(".") : "");
 
 function shift(ym: string, d: number) {
   const [y, m] = ym.split("-").map(Number);
   const t = y * 12 + (m - 1) + d;
   return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`;
-}
-
-const badgeCls: Record<string, string> = {
-  paid: "bg-green-100 text-green-700",
-  partial: "bg-yellow-100 text-yellow-800",
-  overdue: "bg-red-100 text-red-700",
-  pending: "bg-muted",
-};
-function Badge({ status }: { status: string }) {
-  return (
-    <span className={`whitespace-nowrap rounded px-2 py-0.5 text-xs ${badgeCls[status] ?? "bg-muted"}`}>
-      {paymentStatusLabels[status] ?? status}
-    </span>
-  );
 }
 
 const tabCls = (active: boolean) =>
@@ -76,13 +69,14 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   await connection();
   const sp = await searchParams;
 
-  const nowYM = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tbilisi" }).slice(0, 7);
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tbilisi" });
+  const nowYM = today.slice(0, 7);
   const ym = /^\d{4}-\d{2}$/.test(sp.ym ?? "") ? (sp.ym as string) : nowYM;
   const [year, month] = ym.split("-").map(Number);
   const [cy, cm] = nowYM.split("-").map(Number);
   const status = sp.status ?? "all";
   const type = sp.type ?? "all";
+  const q = (sp.q ?? "").trim().toLowerCase();
 
   const supabase = await createClient();
   const {
@@ -94,22 +88,32 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
     .eq("id", user?.id ?? "")
     .single();
   const isManager = me?.role === "manager";
+  const canEdit = isManager || me?.role === "assistant";
   const tab = sp.tab === "debts" ? "debts" : sp.tab === "history" && isManager ? "history" : "month";
 
   const [{ data: propsData }, { data: resData }] = await Promise.all([
     supabase.from("properties").select("id, type, number"),
-    supabase.from("residents").select("property_id, full_name, is_primary").order("is_primary", { ascending: false }),
+    supabase
+      .from("residents")
+      .select("property_id, full_name, is_primary, payment_method")
+      .order("is_primary", { ascending: false }),
   ]);
   const props = (propsData ?? []) as Prop[];
   const propMap = new Map(props.map((p) => [p.id, p]));
   const owners = new Map<string, string[]>();
+  const payerMethod = new Map<string, string>();
   (resData ?? []).forEach((r) => {
     owners.set(r.property_id, [...(owners.get(r.property_id) ?? []), r.full_name]);
+    if (r.payment_method && !payerMethod.has(r.property_id)) {
+      payerMethod.set(r.property_id, r.payment_method);
+    }
   });
   const ownerOf = (id: string) => (owners.get(id) ?? []).join(" / ");
 
   const link = (o: Record<string, string>) => {
-    const p = new URLSearchParams({ tab, ym, status, type, ...o });
+    const p = new URLSearchParams();
+    const base: Record<string, string> = { tab, ym, status, type, q: sp.q ?? "", ...o };
+    Object.entries(base).forEach(([k, v]) => v && p.set(k, v));
     return `/finance?${p.toString()}`;
   };
 
@@ -117,7 +121,15 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
     <PageHeader
       title="ფინანსები"
       action={
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <a
+            href="https://client.asg.ge/"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-11 items-center rounded-md border px-3 text-sm"
+          >
+            ASG ↗
+          </a>
           <a
             href={`/finance/export?ym=${ym}`}
             className="inline-flex h-11 items-center rounded-md border px-3 text-sm"
@@ -130,27 +142,21 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
           >
             Excel: ყველა
           </a>
-
-          <a
-            href="https://client.asg.ge/"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-11 items-center rounded-md border px-3 text-sm"
-          >
-            ASG ↗
-          </a>
         </div>
       }
     />
   );
 
   const tabs = (
-    <div className="mb-4 flex gap-1">
+    <div className="mb-4 flex flex-wrap gap-1">
       <Link href={link({ tab: "month" })} className={tabCls(tab === "month")}>
         თვე
       </Link>
       <Link href={link({ tab: "debts" })} className={tabCls(tab === "debts")}>
         დავალიანება
+      </Link>
+      <Link href="/finance/residents" className={tabCls(false)}>
+        მობინადრეები
       </Link>
       {isManager && (
         <Link href={link({ tab: "history" })} className={tabCls(tab === "history")}>
@@ -167,7 +173,12 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
 
     const grouped = new Map<string, { id: string; total: number; months: number; oldest: number }>();
     past.forEach((p) => {
-      const g = grouped.get(p.property_id) ?? { id: p.property_id, total: 0, months: 0, oldest: 999999 };
+      const g = grouped.get(p.property_id) ?? {
+        id: p.property_id,
+        total: 0,
+        months: 0,
+        oldest: 999999,
+      };
       g.total += p.balance;
       g.months += 1;
       g.oldest = Math.min(g.oldest, p.year * 100 + p.month);
@@ -179,8 +190,8 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
     const grand = rows.reduce((s, r) => s + r.total, 0);
 
     const cols: Column<(typeof rows)[number]>[] = [
-      { header: "ობიექტი", cell: (r) => propMap.get(r.id)!.number },
-      { header: "მესაკუთრე", cell: (r) => ownerOf(r.id) },
+      { header: "მობინადრე", cell: (r) => ownerOf(r.id) || "—" },
+      { header: "ბინა / სახლი", cell: (r) => propMap.get(r.id)!.number },
       { header: "თვე", cell: (r) => r.months, className: "text-right" },
       {
         header: "დაწყებული",
@@ -199,7 +210,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
         {tabs}
         <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3">
           <Stat label="ჯამური დავალიანება" value={money(grand)} tone="text-red-600" />
-          <Stat label="ობიექტი დავალიანებით" value={String(rows.length)} />
+          <Stat label="მობინადრე დავალიანებით" value={String(rows.length)} />
         </div>
         <DataTable rows={rows} columns={cols} empty="დავალიანება არ არის 🎉" />
       </>
@@ -225,8 +236,11 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
       const o = a.old_data ?? {};
       const n = a.new_data ?? {};
       const parts: string[] = [];
-      if (o.amount_paid !== n.amount_paid) parts.push(`გადახდილი: ${money(Number(o.amount_paid))} → ${money(Number(n.amount_paid))}`);
-      if (o.amount_due !== n.amount_due) parts.push(`გადასახდელი: ${money(Number(o.amount_due))} → ${money(Number(n.amount_due))}`);
+      if (o.amount_paid !== n.amount_paid)
+        parts.push(`გადახდილი: ${money(Number(o.amount_paid))} → ${money(Number(n.amount_paid))}`);
+      if (o.amount_due !== n.amount_due)
+        parts.push(`გადასახდელი: ${money(Number(o.amount_due))} → ${money(Number(n.amount_due))}`);
+      if ((o.payment_method ?? "") !== (n.payment_method ?? "")) parts.push("ტიპი შეიცვალა");
       if ((o.comment ?? "") !== (n.comment ?? "")) parts.push("კომენტარი შეიცვალა");
       return parts.join("; ") || "შეიცვალა";
     };
@@ -241,13 +255,16 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
             timeStyle: "short",
           }),
       },
-      { header: "ვინ", cell: (a) => (a.changed_by ? names.get(a.changed_by) ?? "—" : "—") },
+      { header: "ვინ", cell: (a) => (a.changed_by ? (names.get(a.changed_by) ?? "—") : "—") },
       {
-        header: "ობიექტი",
+        header: "ბინა / სახლი",
         cell: (a) => {
           const d = a.new_data ?? a.old_data ?? {};
           const p = d.property_id ? propMap.get(d.property_id) : undefined;
-          return p ? `${p.number} · ${String(d.month).padStart(2, "0")}.${d.year}` : "—";
+          const who = d.property_id ? ownerOf(d.property_id) : "";
+          return p
+            ? `${who ? who + " · " : ""}${p.number} · ${String(d.month).padStart(2, "0")}.${d.year}`
+            : "—";
         },
       },
       { header: "ცვლილება", cell: (a) => describe(a as unknown as Audit) },
@@ -279,51 +296,30 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
 
   const rows = all.filter((p) => {
     if (type !== "all" && propMap.get(p.property_id)!.type !== type) return false;
-    if (status === "unpaid") return p.balance > 0.001;
-    if (status === "paid") return p.balance <= 0.001;
+    if (status === "unpaid" && !(p.balance > 0.001)) return false;
+    if (status === "paid" && !(p.balance <= 0.001)) return false;
+    if (q) {
+      const hay = [ownerOf(p.property_id), propMap.get(p.property_id)!.number, p.comment ?? ""]
+        .join(" ")
+        .toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
     return true;
   });
 
-  const cols: Column<Pay>[] = [
-    { header: "ობიექტი", cell: (p) => propMap.get(p.property_id)!.number },
-    { header: "მესაკუთრე", cell: (p) => ownerOf(p.property_id) },
-    { header: "გადასახდელი", cell: (p) => money(p.amount_due), className: "text-right" },
-    { header: "გადახდილი", cell: (p) => money(p.amount_paid), className: "text-right" },
-    {
-      header: "ნაშთი",
-      cell: (p) => (p.balance > 0.001 ? money(p.balance) : "—"),
-      className: "text-right",
-    },
-    { header: "სტატუსი", cell: (p) => <Badge status={p.status} /> },
-    {
-      header: "ფორმა / თარიღი",
-      cell: (p) =>
-        p.amount_paid > 0
-          ? [p.payment_method ? paymentMethodLabels[p.payment_method] : "", dmy(p.paid_at)]
-              .filter(Boolean)
-              .join(" · ") || "—"
-          : "—",
-    },
-    { header: "კომენტარი", cell: (p) => <span className="line-clamp-2 max-w-56 text-sm">{p.comment}</span> },
-  ];
-  if (isManager) {
-    cols.push({
-      header: "მოქმედება",
-      cell: (p) => (
-        <PaymentDialog
-          key={`${p.id}-${p.amount_due}-${p.amount_paid}-${p.paid_at}-${p.payment_method}-${p.comment}`}
-          id={p.id}
-          label={`${propMap.get(p.property_id)!.number} · ${monthNames[month - 1]} ${year}`}
-          due={p.amount_due}
-          paid={p.amount_paid}
-          paidAt={p.paid_at}
-          method={p.payment_method}
-          comment={p.comment}
-          today={today}
-        />
-      ),
-    });
-  }
+  const tableRows: PayRow[] = rows.map((p) => ({
+    id: p.id,
+    resident: ownerOf(p.property_id) || "—",
+    property: propMap.get(p.property_id)!.number,
+    due: p.amount_due,
+    paid: p.amount_paid,
+    balance: p.balance,
+    status: p.status,
+    method: p.payment_method,
+    payerMethod: payerMethod.get(p.property_id) ?? null,
+    paidAt: p.paid_at,
+    comment: p.comment,
+  }));
 
   return (
     <>
@@ -350,16 +346,43 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
       {all.length === 0 ? (
         <div className="space-y-3 rounded-lg border p-6 text-center">
           <p className="text-muted-foreground">ამ თვეში გადახდის ჩანაწერები ჯერ არ არის.</p>
-          {isManager && <GenerateButton year={year} month={month} />}
+          {canEdit && <GenerateButton year={year} month={month} />}
         </div>
       ) : (
         <>
           <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
             <Stat label="გადასახდელი" value={money(totalDue)} />
             <Stat label="გადახდილი" value={money(totalPaid)} tone="text-green-700" />
-            <Stat label="დარჩენილი" value={money(totalDebt)} tone={totalDebt > 0 ? "text-red-600" : ""} />
-            <Stat label="ობიექტი" value={`${all.filter((p) => p.balance <= 0.001).length} / ${all.length} გადახდილი`} />
+            <Stat
+              label="დარჩენილი"
+              value={money(totalDebt)}
+              tone={totalDebt > 0 ? "text-red-600" : ""}
+            />
+            <Stat
+              label="მობინადრე"
+              value={`${all.filter((p) => p.balance <= 0.001).length} / ${all.length} გადახდილი`}
+            />
           </div>
+
+          <form action="/finance" method="get" className="mb-3 flex flex-wrap items-center gap-2">
+            <input type="hidden" name="ym" value={ym} />
+            {status !== "all" && <input type="hidden" name="status" value={status} />}
+            {type !== "all" && <input type="hidden" name="type" value={type} />}
+            <Input
+              name="q"
+              defaultValue={sp.q ?? ""}
+              placeholder="ძიება: მობინადრე, ბინა, კომენტარი..."
+              className="h-11 min-w-48 flex-1"
+            />
+            <Button type="submit" className="h-11">
+              ძიება
+            </Button>
+            {q && (
+              <Link href={link({ q: "" })} className="px-2 text-sm text-muted-foreground underline">
+                გასუფთავება
+              </Link>
+            )}
+          </form>
 
           <div className="mb-4 flex flex-wrap gap-1">
             {[
@@ -383,7 +406,13 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
             ))}
           </div>
 
-          <DataTable rows={rows} columns={cols} />
+          <PaymentsTable
+            key={`${ym}-${status}-${type}-${q}`}
+            rows={tableRows}
+            today={today}
+            canEdit={canEdit}
+            monthLabel={`${monthNames[month - 1]} ${year}`}
+          />
         </>
       )}
     </>

@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { FormField } from "@/components/form-field";
 import { SelectField } from "@/components/native-fields";
-import { recordPayment } from "./actions";
+import { deletePayments, recordPayment } from "./actions";
 
 export function PaymentDialog({
   id,
@@ -19,6 +19,7 @@ export function PaymentDialog({
   paid,
   paidAt,
   method,
+  defaultMethod,
   comment,
   today,
 }: {
@@ -28,6 +29,7 @@ export function PaymentDialog({
   paid: number;
   paidAt: string | null;
   method: string | null;
+  defaultMethod: string | null;
   comment: string | null;
   today: string;
 }) {
@@ -51,10 +53,19 @@ export function PaymentDialog({
     });
   }
 
+  function remove() {
+    if (!confirm("ამ თვის გადახდის ჩანაწერი სამუდამოდ წაიშლება. გავაგრძელო?")) return;
+    start(async () => {
+      const r = await deletePayments([id]);
+      if (r?.error) setError(r.error);
+      else setOpen(false);
+    });
+  }
+
   return (
     <>
       <Button variant="outline" className="h-9" onClick={() => setOpen(true)}>
-        გადახდა
+        შეცვლა
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
@@ -102,9 +113,9 @@ export function PaymentDialog({
                 onChange={(e) => setPaidDate(e.target.value)}
               />
               <SelectField
-                label="ფორმა"
+                label="რით იხდის"
                 name="payment_method"
-                defaultValue={method ?? ""}
+                defaultValue={method ?? defaultMethod ?? ""}
                 options={[
                   { value: "", label: "—" },
                   { value: "cash", label: "ნაღდი" },
@@ -117,6 +128,15 @@ export function PaymentDialog({
             {error && <p className="text-sm text-red-600">{error}</p>}
             <Button type="submit" className="h-11 w-full" disabled={pending}>
               {pending ? "..." : "შენახვა"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-10 w-full text-red-600"
+              disabled={pending}
+              onClick={remove}
+            >
+              ჩანაწერის წაშლა
             </Button>
           </form>
         </DialogContent>
