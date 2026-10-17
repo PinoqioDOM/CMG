@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { monthRange, weekRange, dm } from "@/lib/plan";
 
 const uuid = z.string().uuid();
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -21,6 +22,25 @@ export async function toggleChecklist(
 
   const supabase = await createClient();
 
+  // დახურული პერიოდი დაბლოკილია
+  const { data: tpl } = await supabase
+    .from("checklist_templates")
+    .select("position, frequency")
+    .eq("id", t.data)
+    .single();
+  if (tpl) {
+    const { data: locks } = await supabase
+      .from("checklist_closures")
+      .select("period_type")
+      .eq("position", tpl.position)
+      .lte("period_start", d.data)
+      .gte("period_end", d.data);
+    const locked = (locks ?? []).some(
+      (l) => l.period_type === "month" || (l.period_type === "week" && tpl.frequency !== "monthly")
+    );
+    if (locked) return { error: "ეს პერიოდი დახურულია. ჯერ გახსენი." };
+  }
+
   if (done) {
     const {
       data: { user },
@@ -35,17 +55,11 @@ export async function toggleChecklist(
     if (f.data === "daily") {
       q = q.eq("done_date", d.data);
     } else if (f.data === "weekly") {
-      const [y, m, dd] = d.data.split("-").map(Number);
-      const ts = Date.UTC(y, m - 1, dd);
-      const offset = (new Date(ts).getUTCDay() + 6) % 7; // ორშაბათიდან
-      const start = new Date(ts - offset * 86400000).toISOString().slice(0, 10);
-      const end = new Date(ts + (6 - offset) * 86400000).toISOString().slice(0, 10);
-      q = q.gte("done_date", start).lte("done_date", end);
+      const w = weekRange(d.data);
+      q = q.gte("done_date", w.start).lte("done_date", w.end);
     } else {
-      const [y, m] = d.data.split("-").map(Number);
-      const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-      const ym = d.data.slice(0, 7);
-      q = q.gte("done_date", `${ym}-01`).lte("done_date", `${ym}-${String(last).padStart(2, "0")}`);
+      const mo = monthRange(d.data);
+      q = q.gte("done_date", mo.start).lte("done_date", mo.end);
     }
     const { error } = await q;
     if (error) return { error: error.message };
@@ -263,5 +277,143 @@ export async function deleteSupply(id: string) {
   if (old?.photo_url) await supabase.storage.from("photos").remove([old.photo_url]);
 
   revalidatePath("/services");
+  return { ok: true };
+}
+
+// ---------- გეგმის დახურვა ----------
+function containedWeeks(start: string, end: string) {
+  const [y, m, d] = start.split("-").map(Number);
+  let ts = Date.UTC(y, m - 1, d);
+  while (new Date(ts).getUTCDay() !== 1) ts += 86400000;
+  const [ey, em, ed] = end.split("-").map(Number);
+  const endTs = Date.UTC(ey, em - 1, ed);
+  const out: string[] = [];
+  while (ts + 6 * 86400000 <= endTs) {
+    out.push(new Date(ts).toISOString().slice(0, 10));
+    ts += 7 * 86400000;
+  }
+  return out;
+}
+
+export async function closePlan(position: string, type: string, anchor: string) {
+  const p = z.string().trim().min(1).max(60).safeParse(position);
+  const ty = z.enum(["week", "month"]).safeParse(type);
+  const a = day.safeParse(anchor);
+  if (!p.success || !ty.success || !a.success) return { error: "არასწორი მონაცემი" };
+
+  const { start, end } = ty.data === "week" ? weekRange(a.data) : monthRange(a.data);
+  const supabase = await createClient();
+
+  const { data: existing } = await supabase
+    .from("checklist_closures")
+    .select("id")
+    .eq("position", p.data)
+    .eq("period_type", ty.data)
+    .eq("period_start", start)
+    .limit(1);
+  if (existing && existing.length > 0) return { error: "ეს გეგმა უკვე დახურულია" };
+
+  if (ty.data === "month") {
+    const starts = containedWeeks(start, end);
+    if (starts.length > 0) {
+      const { data: closed } = await supabase
+        .from("checklist_closures")
+        .select("period_start")
+        .eq("position", p.data)
+        .eq("period_type", "week")
+        .in("period_start", starts);
+      const closedSet = new Set((closed ?? []).map((c) => c.period_start as string));
+      const missing = starts.filter((s) => !closedSet.has(s));
+      if (missing.length > 0) {
+        const labels = missing.map((s) => {
+          const w = weekRange(s);
+          return `${dm(w.start)}–${dm(w.end)}`;
+        });
+        return { error: "ჯერ დახურე კვირის გეგმა: " + labels.join(", ") };
+      }
+    }
+  }
+
+  const { data: tpl } = await supabase
+    .from("checklist_templates")
+    .select("id, title, frequency, sort_order")
+    .eq("position", p.data)
+    .eq("is_active", true)
+    .order("sort_order");
+  const templates = (tpl ?? []).filter((t) => (ty.data === "week" ? t.frequency !== "monthly" : true));
+  if (templates.length === 0) return { error: "ამ სერვისში პუნქტები არ არის" };
+
+  const { data: logs } = await supabase
+    .from("checklist_logs")
+    .select("template_id, done_date")
+    .in(
+      "template_id",
+      templates.map((t) => t.id)
+    )
+    .gte("done_date", start)
+    .lte("done_date", end)
+    .order("done_date");
+
+  const items = templates.map((t) => ({
+    title: t.title,
+    frequency: t.frequency,
+    dates: (logs ?? []).filter((l) => l.template_id === t.id).map((l) => l.done_date as string),
+  }));
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data, error } = await supabase
+    .from("checklist_closures")
+    .insert({
+      position: p.data,
+      period_type: ty.data,
+      period_start: start,
+      period_end: end,
+      snapshot: { items },
+      closed_by: user?.id,
+    })
+    .select("id");
+  if (error) return { error: "ვერ დაიხურა: " + error.message };
+  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
+
+  revalidatePath("/services", "layout");
+  return { ok: true, id: data[0].id as string };
+}
+
+export async function reopenPlan(id: string) {
+  const i = uuid.safeParse(id);
+  if (!i.success) return { error: "არასწორი მონაცემი" };
+
+  const supabase = await createClient();
+  const { data: c } = await supabase
+    .from("checklist_closures")
+    .select("position, period_type, period_start, period_end")
+    .eq("id", i.data)
+    .single();
+  if (!c) return { error: "ჩანაწერი ვერ მოიძებნა" };
+
+  if (c.period_type === "week") {
+    const { data: months } = await supabase
+      .from("checklist_closures")
+      .select("id")
+      .eq("position", c.position)
+      .eq("period_type", "month")
+      .lte("period_start", c.period_end)
+      .gte("period_end", c.period_start)
+      .limit(1);
+    if (months && months.length > 0) return { error: "ჯერ გახსენი თვის გეგმა" };
+  }
+
+  const { data, error } = await supabase
+    .from("checklist_closures")
+    .delete()
+    .eq("id", i.data)
+    .select("id");
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
+
+  revalidatePath("/services", "layout");
   return { ok: true };
 }
