@@ -353,7 +353,7 @@ async function Content() {
         </Card>
 
         {/* ჩეკლისტი */}
-        <Card title="დღევანდელი ჩეკლისტი" href="/services">
+        <Card title="დღევანდელი დასუფთავების გეგმა" href="/services">
           <div className="space-y-3">
             {checklist.map((c) => (
               <div key={c.role}>

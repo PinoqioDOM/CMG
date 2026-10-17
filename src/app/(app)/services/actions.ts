@@ -16,7 +16,7 @@ export async function toggleChecklist(
 ) {
   const t = uuid.safeParse(templateId);
   const d = day.safeParse(date);
-  const f = z.enum(["daily", "monthly"]).safeParse(frequency);
+  const f = z.enum(["daily", "weekly", "monthly"]).safeParse(frequency);
   if (!t.success || !d.success || !f.success) return { error: "არასწორი მონაცემი" };
 
   const supabase = await createClient();
@@ -34,6 +34,13 @@ export async function toggleChecklist(
     let q = supabase.from("checklist_logs").delete().eq("template_id", t.data);
     if (f.data === "daily") {
       q = q.eq("done_date", d.data);
+    } else if (f.data === "weekly") {
+      const [y, m, dd] = d.data.split("-").map(Number);
+      const ts = Date.UTC(y, m - 1, dd);
+      const offset = (new Date(ts).getUTCDay() + 6) % 7; // ორშაბათიდან
+      const start = new Date(ts - offset * 86400000).toISOString().slice(0, 10);
+      const end = new Date(ts + (6 - offset) * 86400000).toISOString().slice(0, 10);
+      q = q.gte("done_date", start).lte("done_date", end);
     } else {
       const [y, m] = d.data.split("-").map(Number);
       const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -110,6 +117,39 @@ export async function deleteTemplate(id: string) {
     .select("id");
   if (error) return { error: error.message };
   if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
+
+  revalidatePath("/services");
+  return { ok: true };
+}
+
+export async function setTemplateFrequency(id: string, frequency: string) {
+  const i = uuid.safeParse(id);
+  const f = z.enum(["daily", "weekly", "monthly"]).safeParse(frequency);
+  if (!i.success || !f.success) return { error: "არასწორი მონაცემი" };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("checklist_templates")
+    .update({ frequency: f.data })
+    .eq("id", i.data)
+    .select("id");
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
+
+  revalidatePath("/services");
+  return { ok: true };
+}
+
+export async function deleteService(name: string) {
+  const n = z.string().trim().min(1).max(60).safeParse(name);
+  if (!n.success) return { error: "არასწორი მონაცემი" };
+  if (["housekeeper", "groundskeeper", "gardener"].includes(n.data)) {
+    return { error: "ძირითადი სერვისის წაშლა შეუძლებელია" };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("checklist_templates").delete().eq("position", n.data);
+  if (error) return { error: error.message };
 
   revalidatePath("/services");
   return { ok: true };

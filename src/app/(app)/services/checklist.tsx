@@ -6,29 +6,34 @@ import { toggleChecklist } from "./actions";
 export type Item = {
   id: string;
   title: string;
-  frequency: "daily" | "monthly";
+  frequency: "daily" | "weekly" | "monthly";
   done: boolean;
 };
 
-function Section({
+function Column({
   title,
+  hint,
   list,
   onToggle,
 }: {
   title: string;
+  hint: string;
   list: Item[];
   onToggle: (i: Item) => void;
 }) {
   const done = list.filter((i) => i.done).length;
   return (
-    <section className="mb-6">
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="font-semibold">{title}</h2>
-        <span className="text-sm text-muted-foreground">
-          {done} / {list.length}
-        </span>
+    <section className="space-y-3 rounded-xl border p-3">
+      <div>
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold">{title}</h2>
+          <span className="text-sm text-muted-foreground">
+            {done} / {list.length}
+          </span>
+        </div>
+        <div className="text-xs text-muted-foreground">{hint}</div>
       </div>
-      <div className="mb-3 h-2 overflow-hidden rounded bg-muted">
+      <div className="h-2 overflow-hidden rounded bg-muted">
         <div
           className="h-full bg-green-500"
           style={{ width: `${list.length ? (done / list.length) * 100 : 0}%` }}
@@ -36,9 +41,9 @@ function Section({
       </div>
       <div className="space-y-2">
         {list.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-            {'პუნქტები არ არის (დაამატე „შაბლონები" ჩანართში)'}
-        </p>
+          <p className="text-sm text-muted-foreground">
+            {"პუნქტები არ არის (დაამატე „შაბლონებში“)"}
+          </p>
         )}
         {list.map((i) => (
           <label
@@ -49,7 +54,7 @@ function Section({
           >
             <input
               type="checkbox"
-              className="size-5"
+              className="size-5 shrink-0"
               checked={i.done}
               onChange={() => onToggle(i)}
             />
@@ -65,11 +70,13 @@ export function Checklist({
   items,
   date,
   dayLabel,
+  weekLabel,
   monthLabel,
 }: {
   items: Item[];
   date: string;
   dayLabel: string;
+  weekLabel: string;
   monthLabel: string;
 }) {
   const [opt, apply] = useOptimistic(items, (s, id: string) =>
@@ -86,17 +93,25 @@ export function Checklist({
   }
 
   return (
-    <>
-      <Section
-        title={`დღიური · ${dayLabel}`}
+    <div className="grid gap-4 lg:grid-cols-3">
+      <Column
+        title="დღიური"
+        hint={dayLabel}
         list={opt.filter((i) => i.frequency === "daily")}
         onToggle={toggle}
       />
-      <Section
-        title={`თვიური · ${monthLabel}`}
+      <Column
+        title="კვირეული"
+        hint={weekLabel}
+        list={opt.filter((i) => i.frequency === "weekly")}
+        onToggle={toggle}
+      />
+      <Column
+        title="თვიური"
+        hint={monthLabel}
         list={opt.filter((i) => i.frequency === "monthly")}
         onToggle={toggle}
       />
-    </>
+    </div>
   );
 }

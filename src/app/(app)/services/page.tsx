@@ -8,40 +8,58 @@ import { Checklist, type Item } from "./checklist";
 import { TemplatesManager, type Template } from "./templates-manager";
 import { Supplies } from "./supplies";
 import { SupplyForm, type Supply } from "./supply-form";
+import { ServiceForm } from "./service-form";
 
 type SearchParams = Promise<{ tab?: string; role?: string; date?: string }>;
 
-const roles = ["housekeeper", "groundskeeper", "gardener"] as const;
-type Role = (typeof roles)[number];
+const defaults = ["housekeeper", "groundskeeper", "gardener"];
+const groupLabel = (g: string) => positionLabels[g] ?? g;
 
 const tabCls = (active: boolean) =>
   `rounded-md px-3 py-2 text-sm ${active ? "bg-muted font-medium" : "text-muted-foreground"}`;
 const pillCls = "rounded-md border px-3 py-2 text-sm";
 
-function shiftDay(date: string, d: number) {
+const shiftDay = (date: string, d: number) => {
   const [y, m, day] = date.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, day) + d * 86400000).toISOString().slice(0, 10);
-}
+};
 const dmy = (s: string) => s.split("-").reverse().join(".");
+const dm = (s: string) => s.split("-").reverse().slice(0, 2).join(".");
+
+function weekRange(date: string) {
+  const [y, m, d] = date.split("-").map(Number);
+  const ts = Date.UTC(y, m - 1, d);
+  const offset = (new Date(ts).getUTCDay() + 6) % 7;
+  const start = new Date(ts - offset * 86400000).toISOString().slice(0, 10);
+  const end = new Date(ts + (6 - offset) * 86400000).toISOString().slice(0, 10);
+  return { start, end };
+}
 
 async function Content({ searchParams }: { searchParams: SearchParams }) {
   await connection();
   const sp = await searchParams;
 
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tbilisi" });
-  const tab = sp.tab === "supplies" ? "supplies" : sp.tab === "templates" ? "templates" : "checklist";
-  const role: Role = roles.includes(sp.role as Role) ? (sp.role as Role) : "housekeeper";
+  const tab =
+    sp.tab === "supplies" ? "supplies" : sp.tab === "templates" ? "templates" : "checklist";
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? (sp.date as string) : today;
+
+  const supabase = await createClient();
+
+  // სერვისების სია: სამი ძირითადი + ახლად დამატებულები
+  const { data: posRows } = await supabase.from("checklist_templates").select("position");
+  const groups = Array.from(
+    new Set([...defaults, ...(posRows ?? []).map((r) => r.position as string)])
+  );
+  const role = groups.includes(sp.role ?? "") ? (sp.role as string) : groups[0];
 
   const link = (o: Record<string, string>) =>
     `/services?${new URLSearchParams({ tab, role, date, ...o }).toString()}`;
 
-  const supabase = await createClient();
-
   const tabs = (
     <div className="mb-4 flex gap-1">
       <Link href={link({ tab: "checklist" })} className={tabCls(tab === "checklist")}>
-        ჩეკლისტი
+        დასუფთავების გეგმა
       </Link>
       <Link href={link({ tab: "supplies" })} className={tabCls(tab === "supplies")}>
         მომარაგება
@@ -54,9 +72,9 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
 
   const roleTabs = (
     <div className="mb-4 flex flex-wrap gap-1">
-      {roles.map((r) => (
-        <Link key={r} href={link({ role: r })} className={tabCls(role === r)}>
-          {positionLabels[r]}
+      {groups.map((g) => (
+        <Link key={g} href={link({ role: g })} className={tabCls(role === g)}>
+          {groupLabel(g)}
         </Link>
       ))}
     </div>
@@ -97,10 +115,18 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
       .order("sort_order");
     return (
       <>
-        <PageHeader title="სერვისები" description="ჩეკლისტის შაბლონები" />
+        <PageHeader
+          title="სერვისები"
+          description="გეგმის შაბლონები"
+          action={<ServiceForm />}
+        />
         {tabs}
         {roleTabs}
-        <TemplatesManager role={role} templates={(data ?? []) as Template[]} />
+        <TemplatesManager
+          role={role}
+          templates={(data ?? []) as Template[]}
+          isCustom={!defaults.includes(role)}
+        />
       </>
     );
   }
@@ -108,7 +134,12 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   // ---------- ჩეკლისტი ----------
   const ym = date.slice(0, 7);
   const [y, m] = ym.split("-").map(Number);
-  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const last = String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0");
+  const monthStart = `${ym}-01`;
+  const monthEnd = `${ym}-${last}`;
+  const week = weekRange(date);
+  const rangeStart = week.start < monthStart ? week.start : monthStart;
+  const rangeEnd = week.end > monthEnd ? week.end : monthEnd;
 
   const { data: tpl } = await supabase
     .from("checklist_templates")
@@ -124,24 +155,29 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
         .from("checklist_logs")
         .select("template_id, done_date")
         .in("template_id", ids)
-        .gte("done_date", `${ym}-01`)
-        .lte("done_date", `${ym}-${String(last).padStart(2, "0")}`)
+        .gte("done_date", rangeStart)
+        .lte("done_date", rangeEnd)
     : { data: [] as { template_id: string; done_date: string }[] };
   const logs = logsData ?? [];
+
+  const inRange = (t: string, from: string, to: string) =>
+    logs.some((l) => l.template_id === t && l.done_date >= from && l.done_date <= to);
 
   const items: Item[] = templates.map((t) => ({
     id: t.id,
     title: t.title,
-    frequency: t.frequency as "daily" | "monthly",
+    frequency: t.frequency as Item["frequency"],
     done:
       t.frequency === "daily"
-        ? logs.some((l) => l.template_id === t.id && l.done_date === date)
-        : logs.some((l) => l.template_id === t.id),
+        ? inRange(t.id, date, date)
+        : t.frequency === "weekly"
+          ? inRange(t.id, week.start, week.end)
+          : inRange(t.id, monthStart, monthEnd),
   }));
 
   return (
     <>
-      <PageHeader title="სერვისები" description="ჩეკლისტები" />
+      <PageHeader title="სერვისები" description="დასუფთავების გეგმა" />
       {tabs}
       {roleTabs}
 
@@ -165,6 +201,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
         items={items}
         date={date}
         dayLabel={dmy(date)}
+        weekLabel={`${dm(week.start)} – ${dm(week.end)}`}
         monthLabel={`${monthNames[m - 1]} ${y}`}
       />
     </>

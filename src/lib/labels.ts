@@ -69,5 +69,6 @@ export const monthNames = [
 
 export const frequencyLabels: Record<string, string> = {
   daily: "დღიური",
+  weekly: "კვირეული",
   monthly: "თვიური",
 };
