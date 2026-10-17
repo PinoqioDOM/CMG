@@ -9,10 +9,12 @@ import { BulkAddForm } from "./bulk-add-form";
 import { EmployeeList } from "./employee-list";
 import { AttendanceGrid, type Emp, type Rec } from "./attendance-grid";
 import { ContinueButton } from "./continue-button";
+import { AddToRoster } from "./roster-controls";
+import { ScheduleGenerator, type Pattern } from "./schedule-generator";
 
 type SearchParams = Promise<{ tab?: string; ym?: string }>;
 
-const order = ["security", "housekeeper", "groundskeeper", "gardener", "other"];
+const order = ["manager", "assistant", "security", "housekeeper", "groundskeeper", "gardener", "other"];
 const tabCls = (active: boolean) =>
   `rounded-md px-3 py-2 text-sm ${active ? "bg-muted font-medium" : "text-muted-foreground"}`;
 const pillCls = "rounded-md border px-3 py-2 text-sm";
@@ -61,7 +63,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
         <PageHeader
           title="პერსონალი"
           action={
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <BulkAddForm />
               <EmployeeForm />
             </div>
@@ -73,16 +75,39 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
     );
   }
 
-  const { data: recData } = await supabase
-    .from("attendance")
-    .select("employee_id, date, shift_type, hours, status, note")
-    .gte("date", `${ym}-01`)
-    .lte("date", `${ym}-${String(days).padStart(2, "0")}`);
+  const [{ data: recData }, { data: rosterData }, { data: patData }] = await Promise.all([
+    supabase
+      .from("attendance")
+      .select("employee_id, date, shift_type, hours, status, note")
+      .gte("date", `${ym}-01`)
+      .lte("date", `${ym}-${String(days).padStart(2, "0")}`),
+    supabase.from("attendance_roster").select("employee_id").eq("ym", ym),
+    supabase.from("schedule_patterns").select("employee_id, pattern"),
+  ]);
+
   const records = (recData ?? []) as Rec[];
   const withRecords = new Set(records.map((r) => r.employee_id));
-  const shown: Emp[] = employees
-    .filter((e) => e.is_active || withRecords.has(e.id))
-    .map((e) => ({ id: e.id, full_name: e.full_name, position: e.position, is_active: e.is_active }));
+  const rosterIds = new Set((rosterData ?? []).map((r) => r.employee_id as string));
+  const hasRoster = rosterIds.size > 0;
+
+  const shownEmployees = employees.filter(
+    (e) => withRecords.has(e.id) || (hasRoster ? rosterIds.has(e.id) : e.is_active)
+  );
+  const shown: Emp[] = shownEmployees.map((e) => ({
+    id: e.id,
+    full_name: e.full_name,
+    position: e.position,
+    is_active: e.is_active,
+  }));
+  const shownIds = new Set(shown.map((e) => e.id));
+  const candidates = employees
+    .filter((e) => e.is_active && !shownIds.has(e.id))
+    .map((e) => ({ id: e.id, full_name: e.full_name }));
+
+  const patterns: Record<string, Pattern> = {};
+  (patData ?? []).forEach((p) => {
+    patterns[p.employee_id as string] = p.pattern as Pattern;
+  });
 
   return (
     <>
@@ -93,7 +118,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
         <Link href={`/staff?ym=${shift(ym, -1)}`} className={pillCls}>
           ←
         </Link>
-        <div className="min-w-44 text-center font-semibold">
+        <div className="min-w-40 text-center font-semibold">
           {monthNames[month - 1]} {year}
         </div>
         <Link href={`/staff?ym=${shift(ym, 1)}`} className={pillCls}>
@@ -104,9 +129,17 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
             დღეს
           </Link>
         )}
-        <div className="ml-auto">
-          <ContinueButton year={year} month={month} />
-        </div>
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <ScheduleGenerator
+          key={`${ym}-${shown.map((e) => e.id).join(",")}`}
+          ym={ym}
+          employees={shown.map((e) => ({ id: e.id, full_name: e.full_name }))}
+          patterns={patterns}
+        />
+        <AddToRoster ym={ym} candidates={candidates} />
+        <ContinueButton year={year} month={month} />
       </div>
 
       <AttendanceGrid

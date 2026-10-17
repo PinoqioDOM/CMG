@@ -27,9 +27,11 @@ async function Shell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen md:flex">
+    <div className="flex min-h-screen flex-col gap-2 bg-muted/40 p-2 md:flex-row md:items-start md:gap-3 md:p-3">
       <Nav name={profile?.full_name ?? ""} role={profile?.role ?? ""} signOut={signOut} />
-      <main className="flex-1 p-4 pb-24 md:p-8">{children}</main>
+      <main className="min-w-0 flex-1 rounded-2xl border bg-background p-4 pb-24 md:p-8">
+        {children}
+      </main>
     </div>
   );
 }

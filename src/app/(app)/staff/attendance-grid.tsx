@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { clearAttendance, moveAttendance, setAttendance } from "./attendance-actions";
+import { RemoveFromRoster } from "./roster-controls";
 
 export type Rec = {
   employee_id: string;
@@ -263,12 +264,15 @@ export function AttendanceGrid({
             <tbody>
               {employees.map((e) => (
                 <tr key={e.id}>
-                  <td
-                    className={`sticky left-0 z-10 border-b bg-background p-2 font-medium ${
-                      e.is_active ? "" : "text-muted-foreground line-through"
-                    }`}
-                  >
-                    {e.full_name}
+                  <td className="sticky left-0 z-10 min-w-40 border-b bg-background p-2 text-left font-medium">
+                    <div className="flex items-center justify-between gap-1">
+                      <span>{e.full_name}</span>
+                      <RemoveFromRoster
+                        ym={`${year}-${String(month).padStart(2, "0")}`}
+                        employeeId={e.id}
+                        name={e.full_name}
+                      />
+                    </div>
                   </td>
                   {dayList.map((d) => {
                     const key = `${e.id}|${dateStr(d)}`;

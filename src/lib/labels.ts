@@ -27,8 +27,16 @@ export const positionLabels: Record<string, string> = {
   housekeeper: "დიასახლისი",
   groundskeeper: "მეეზოვე",
   gardener: "მებაღე",
-  security: "უსაფრთოხება",
+  security: "დაცვა",
+  assistant: "ასისტენტი",
+  manager: "მენეჯერი",
   other: "სხვა",
+};
+
+export const roleLabels: Record<string, string> = {
+  manager: "მენეჯერი",
+  assistant: "ასისტენტი",
+  viewer: "დამკვირვებელი",
 };
 
 export const paymentStatusLabels: Record<string, string> = {

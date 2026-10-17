@@ -208,3 +208,207 @@ export async function moveAttendance(
   revalidatePath("/staff");
   return { ok: true };
 }
+
+// ---------- თვის შემადგენლობა ----------
+async function ensureRoster(supabase: Awaited<ReturnType<typeof createClient>>, ym: string) {
+  const { count } = await supabase
+    .from("attendance_roster")
+    .select("employee_id", { count: "exact", head: true })
+    .eq("ym", ym);
+  if ((count ?? 0) > 0) return;
+
+  const [y, m] = ym.split("-").map(Number);
+  const last = String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0");
+  const [{ data: act }, { data: rec }] = await Promise.all([
+    supabase.from("employees").select("id").eq("is_active", true),
+    supabase
+      .from("attendance")
+      .select("employee_id")
+      .gte("date", `${ym}-01`)
+      .lte("date", `${ym}-${last}`),
+  ]);
+  const ids = new Set([...(act ?? []).map((e) => e.id), ...(rec ?? []).map((r) => r.employee_id)]);
+  if (ids.size > 0) {
+    await supabase
+      .from("attendance_roster")
+      .upsert(
+        Array.from(ids).map((employee_id) => ({ ym, employee_id })),
+        { onConflict: "ym,employee_id", ignoreDuplicates: true }
+      );
+  }
+}
+
+const ymRe = /^\d{4}-\d{2}$/;
+
+export async function addToRoster(ym: string, ids: string[]) {
+  const y = z.string().regex(ymRe).safeParse(ym);
+  const list = z.array(z.string().uuid()).min(1).max(100).safeParse(ids);
+  if (!y.success || !list.success) return { error: "არასწორი მონაცემი" };
+
+  const supabase = await createClient();
+  await ensureRoster(supabase, y.data);
+  const { data, error } = await supabase
+    .from("attendance_roster")
+    .upsert(
+      list.data.map((employee_id) => ({ ym: y.data, employee_id })),
+      { onConflict: "ym,employee_id" }
+    )
+    .select("employee_id");
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
+
+  revalidatePath("/staff");
+  return { ok: true };
+}
+
+export async function removeFromRoster(ym: string, employeeId: string) {
+  const y = z.string().regex(ymRe).safeParse(ym);
+  const e = z.string().uuid().safeParse(employeeId);
+  if (!y.success || !e.success) return { error: "არასწორი მონაცემი" };
+
+  const [yy, mm] = y.data.split("-").map(Number);
+  const last = String(new Date(Date.UTC(yy, mm, 0)).getUTCDate()).padStart(2, "0");
+
+  const supabase = await createClient();
+  await ensureRoster(supabase, y.data);
+
+  const { error: re } = await supabase
+    .from("attendance_roster")
+    .delete()
+    .eq("ym", y.data)
+    .eq("employee_id", e.data);
+  if (re) return { error: re.message };
+
+  const { error: ae } = await supabase
+    .from("attendance")
+    .delete()
+    .eq("employee_id", e.data)
+    .gte("date", `${y.data}-01`)
+    .lte("date", `${y.data}-${last}`);
+  if (ae) return { error: ae.message };
+
+  revalidatePath("/staff");
+  return { ok: true };
+}
+
+// ---------- გრაფიკის გენერატორი ----------
+const dayRe = /^\d{4}-\d{2}-\d{2}$/;
+const kinds = ["24h", "day", "night", "regular"] as const;
+
+const patternSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("cycle"),
+    every: z.coerce.number().int().min(1).max(31),
+    ref: z.string().regex(dayRe),
+    kind: z.enum(kinds),
+    hours: z.coerce.number().min(0).max(24).optional(),
+  }),
+  z.object({
+    type: z.literal("weekly"),
+    hours: z.array(z.coerce.number().min(0).max(24)).length(7),
+  }),
+]);
+
+const genSchema = z.object({
+  ym: z.string().regex(ymRe),
+  overwrite: z.boolean(),
+  items: z
+    .array(z.object({ employee_id: z.string().uuid(), pattern: patternSchema.nullable() }))
+    .max(100),
+});
+
+function shiftOf(kind: string, hours?: number): [string, number] | null {
+  if (kind === "24h") return ["24h", 24];
+  if (kind === "day") return ["day", 12];
+  if (kind === "night") return ["night", 12];
+  if (!hours || hours <= 0) return null;
+  return ["regular", hours];
+}
+
+export async function generateSchedule(input: unknown) {
+  const parsed = genSchema.safeParse(input);
+  if (!parsed.success) return { error: "არასწორი მონაცემი" } as const;
+  const v = parsed.data;
+
+  const [y, m] = v.ym.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const rows: {
+    employee_id: string;
+    date: string;
+    shift_type: string;
+    hours: number;
+    status: string;
+    note: null;
+  }[] = [];
+
+  for (const it of v.items) {
+    const p = it.pattern;
+    if (!p) continue;
+    if (p.type === "cycle" && p.kind === "regular" && !p.hours) {
+      return { error: "ციკლისთვის მიუთითე საათები" } as const;
+    }
+    const [ry, rm, rd] = p.type === "cycle" ? p.ref.split("-").map(Number) : [0, 0, 0];
+
+    for (let d = 1; d <= last; d++) {
+      const ts = Date.UTC(y, m - 1, d);
+      let shift: [string, number] | null = null;
+
+      if (p.type === "cycle") {
+        const diff = Math.round((ts - Date.UTC(ry, rm - 1, rd)) / 86400000);
+        if (((diff % p.every) + p.every) % p.every === 0) shift = shiftOf(p.kind, p.hours);
+      } else {
+        const h = p.hours[new Date(ts).getUTCDay()];
+        if (h > 0) shift = h === 24 ? ["24h", 24] : h === 12 ? ["day", 12] : ["regular", h];
+      }
+      if (!shift) continue;
+
+      rows.push({
+        employee_id: it.employee_id,
+        date: `${v.ym}-${String(d).padStart(2, "0")}`,
+        shift_type: shift[0],
+        hours: shift[1],
+        status: "present",
+        note: null,
+      });
+    }
+  }
+
+  const supabase = await createClient();
+
+  // თვის ცხრილში გამოჩნდნენ
+  const ids = v.items.map((i) => i.employee_id);
+  if (ids.length) {
+    const r = await addToRoster(v.ym, ids);
+    if ("error" in r && r.error) return { error: r.error } as const;
+  }
+
+  let count = 0;
+  if (rows.length > 0) {
+    const { data, error } = await supabase
+      .from("attendance")
+      .upsert(rows, { onConflict: "employee_id,date", ignoreDuplicates: !v.overwrite })
+      .select("id");
+    if (error) return { error: "ვერ შეინახა: " + error.message } as const;
+    count = data?.length ?? 0;
+  }
+
+  // წესების შენახვა მომდევნო თვეებისთვის
+  const withPattern = v.items.filter((i) => i.pattern);
+  if (withPattern.length) {
+    await supabase.from("schedule_patterns").upsert(
+      withPattern.map((i) => ({
+        employee_id: i.employee_id,
+        pattern: i.pattern,
+        updated_at: new Date().toISOString(),
+      })),
+      { onConflict: "employee_id" }
+    );
+  }
+  const cleared = v.items.filter((i) => !i.pattern).map((i) => i.employee_id);
+  if (cleared.length) {
+    await supabase.from("schedule_patterns").delete().in("employee_id", cleared);
+  }
+
+  revalidatePath("/staff");
+  return { ok: true, count } as const;
+}

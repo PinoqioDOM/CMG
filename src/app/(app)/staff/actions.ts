@@ -4,9 +4,19 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 
+const positions = [
+  "housekeeper",
+  "groundskeeper",
+  "gardener",
+  "security",
+  "assistant",
+  "manager",
+  "other",
+] as const;
+
 const schema = z.object({
   full_name: z.string().trim().min(1, "სახელი აუცილებელია").max(120),
-  position: z.enum(["housekeeper", "groundskeeper", "gardener", "security", "other"]),
+  position: z.enum(positions),
   phone: z.string().trim().max(40).optional(),
   is_active: z.string().optional(),
 });
@@ -54,9 +64,7 @@ export async function updateEmployee(id: string, formData: FormData) {
 }
 
 export async function createEmployees(formData: FormData) {
-  const position = z
-    .enum(["housekeeper", "groundskeeper", "gardener", "security", "other"])
-    .safeParse(formData.get("position"));
+  const position = z.enum(positions).safeParse(formData.get("position"));
   if (!position.success) return { error: "არასწორი პოზიცია" };
 
   const names = Array.from(
