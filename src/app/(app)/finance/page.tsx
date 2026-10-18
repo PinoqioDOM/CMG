@@ -158,6 +158,9 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
       <Link href="/finance/residents" className={tabCls(false)}>
         მობინადრეები
       </Link>
+      <Link href="/finance/period" className={tabCls(false)}>
+        პერიოდი
+      </Link>
       {isManager && (
         <Link href={link({ tab: "history" })} className={tabCls(tab === "history")}>
           ისტორია

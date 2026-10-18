@@ -56,6 +56,9 @@ async function Content() {
         <Link href="/finance/residents" className={tabCls(true)}>
           მობინადრეები
         </Link>
+        <Link href="/finance/period" className={tabCls(false)}>
+          პერიოდი
+        </Link>
       </div>
       <ResidentsList residents={residents} properties={properties} />
     </>
