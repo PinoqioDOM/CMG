@@ -114,12 +114,12 @@ export function ScheduleGenerator({
   return (
     <>
       <Button className="h-11" onClick={() => setOpen(true)}>
-        გრაფიკის გენერატორი
+        წესით შევსება
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>გრაფიკის გენერატორი</DialogTitle>
+            <DialogTitle>წესით შევსება</DialogTitle>
           </DialogHeader>
 
           <p className="text-sm text-muted-foreground">

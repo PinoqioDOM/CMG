@@ -98,7 +98,8 @@ export async function continueMonth(year: number, month: number) {
   const { data: emps, error: ee } = await supabase
     .from("employees")
     .select("id")
-    .eq("is_active", true);
+    .eq("is_active", true)
+    .neq("position", "manager");
   if (ee) return { error: ee.message } as const;
 
   const { data: recs, error: re } = await supabase
@@ -220,7 +221,7 @@ async function ensureRoster(supabase: Awaited<ReturnType<typeof createClient>>, 
   const [y, m] = ym.split("-").map(Number);
   const last = String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0");
   const [{ data: act }, { data: rec }] = await Promise.all([
-    supabase.from("employees").select("id").eq("is_active", true),
+    supabase.from("employees").select("id").eq("is_active", true).neq("position", "manager"),
     supabase
       .from("attendance")
       .select("employee_id")
@@ -411,4 +412,100 @@ export async function generateSchedule(input: unknown) {
 
   revalidatePath("/staff");
   return { ok: true, count } as const;
+}
+
+// ---------- თვის გრაფიკის წაშლა ----------
+export async function clearMonth(ym: string) {
+  const y = z.string().regex(ymRe).safeParse(ym);
+  if (!y.success) return { error: "არასწორი თვე" } as const;
+
+  const [yy, mm] = y.data.split("-").map(Number);
+  const last = String(new Date(Date.UTC(yy, mm, 0)).getUTCDate()).padStart(2, "0");
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("attendance")
+    .delete()
+    .gte("date", `${y.data}-01`)
+    .lte("date", `${y.data}-${last}`)
+    .select("id");
+  if (error) return { error: error.message } as const;
+
+  revalidatePath("/staff");
+  return { ok: true, count: data?.length ?? 0 } as const;
+}
+
+// ---------- გენერატორის (ცხრილის) შენახვა ----------
+const saveSchema = z.object({
+  ym: z.string().regex(ymRe),
+  changes: z
+    .array(
+      z.object({
+        employee_id: z.string().uuid(),
+        date: z.string().regex(dayRe),
+        kind: z
+          .enum(["24h", "day", "night", "regular", "day_off", "vacation", "absent"])
+          .nullable(),
+        hours: z.coerce.number().min(0.5).max(24).optional(),
+      })
+    )
+    .max(2000),
+});
+
+export async function saveSchedule(input: unknown) {
+  const parsed = saveSchema.safeParse(input);
+  if (!parsed.success) return { error: "არასწორი მონაცემი" } as const;
+  const { ym, changes } = parsed.data;
+
+  const upserts: {
+    employee_id: string;
+    date: string;
+    shift_type: string | null;
+    hours: number | null;
+    status: string;
+    note: null;
+  }[] = [];
+  const deletes = new Map<string, string[]>();
+
+  for (const c of changes) {
+    if (!c.date.startsWith(ym)) continue;
+    if (c.kind === null) {
+      deletes.set(c.employee_id, [...(deletes.get(c.employee_id) ?? []), c.date]);
+      continue;
+    }
+    let shift_type: string | null = null;
+    let hours: number | null = null;
+    let status = "present";
+    if (c.kind === "24h") [shift_type, hours] = ["24h", 24];
+    else if (c.kind === "day") [shift_type, hours] = ["day", 12];
+    else if (c.kind === "night") [shift_type, hours] = ["night", 12];
+    else if (c.kind === "regular") {
+      if (!c.hours) return { error: "მიუთითე საათები" } as const;
+      [shift_type, hours] = ["regular", c.hours];
+    } else status = c.kind;
+
+    upserts.push({ employee_id: c.employee_id, date: c.date, shift_type, hours, status, note: null });
+  }
+
+  const supabase = await createClient();
+
+  if (upserts.length > 0) {
+    const { data, error } = await supabase
+      .from("attendance")
+      .upsert(upserts, { onConflict: "employee_id,date" })
+      .select("id");
+    if (error) return { error: "ვერ შეინახა: " + error.message } as const;
+    if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" } as const;
+  }
+
+  const results = await Promise.all(
+    Array.from(deletes.entries()).map(([employee_id, dates]) =>
+      supabase.from("attendance").delete().eq("employee_id", employee_id).in("date", dates)
+    )
+  );
+  const bad = results.find((r) => r.error);
+  if (bad?.error) return { error: bad.error.message } as const;
+
+  revalidatePath("/staff");
+  return { ok: true, saved: upserts.length, removed: Array.from(deletes.values()).flat().length } as const;
 }

@@ -11,6 +11,7 @@ import { AttendanceGrid, type Emp, type Rec } from "./attendance-grid";
 import { ContinueButton } from "./continue-button";
 import { AddToRoster } from "./roster-controls";
 import { ScheduleGenerator, type Pattern } from "./schedule-generator";
+import { ClearMonthButton } from "./clear-month-button";
 
 type SearchParams = Promise<{ tab?: string; ym?: string }>;
 
@@ -91,7 +92,9 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   const hasRoster = rosterIds.size > 0;
 
   const shownEmployees = employees.filter(
-    (e) => withRecords.has(e.id) || (hasRoster ? rosterIds.has(e.id) : e.is_active)
+    (e) =>
+      e.position !== "manager" &&
+      (withRecords.has(e.id) || (hasRoster ? rosterIds.has(e.id) : e.is_active))
   );
   const shown: Emp[] = shownEmployees.map((e) => ({
     id: e.id,
@@ -101,7 +104,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   }));
   const shownIds = new Set(shown.map((e) => e.id));
   const candidates = employees
-    .filter((e) => e.is_active && !shownIds.has(e.id))
+    .filter((e) => e.is_active && e.position !== "manager" && !shownIds.has(e.id))
     .map((e) => ({ id: e.id, full_name: e.full_name }));
 
   const patterns: Record<string, Pattern> = {};
@@ -132,6 +135,12 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
+        <Link
+          href={`/staff/schedule?ym=${ym}`}
+          className="inline-flex h-11 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
+        >
+          გრაფიკის გენერატორი
+        </Link>
         <ScheduleGenerator
           key={`${ym}-${shown.map((e) => e.id).join(",")}`}
           ym={ym}
@@ -140,6 +149,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
         />
         <AddToRoster ym={ym} candidates={candidates} />
         <ContinueButton year={year} month={month} />
+        <ClearMonthButton ym={ym} label={`${monthNames[month - 1]} ${year}`} />
       </div>
 
       <AttendanceGrid
