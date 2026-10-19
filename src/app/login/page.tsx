@@ -33,30 +33,22 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-screen gap-3 bg-muted/40 p-2 lg:grid-cols-[1.15fr_1fr] lg:p-3">
-      {/* მარცხენა: ფოტო */}
-      <section className="relative min-h-52 overflow-hidden rounded-2xl border lg:min-h-0">
+    <main className="grid min-h-dvh bg-[#efeeea] lg:h-dvh lg:grid-cols-[minmax(0,1fr)_420px]">
+      <section className="relative aspect-[1356/818] w-full lg:aspect-auto lg:h-dvh">
         <Image
-          src="/Simetria.jpg"
+          src="/new-cmg.jpg"
           alt="Simetria Park"
           fill
           priority
-          sizes="(min-width: 1024px) 55vw, 100vw"
-          className="object-cover"
+          sizes="(min-width: 1024px) calc(100vw - 420px), 100vw"
+          className="object-cover object-right"
         />
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-5 pt-16 text-white md:p-8 md:pt-24">
-          <div className="text-xl font-semibold md:text-2xl">სიმეტრია პარკი</div>
-          <div className="text-sm text-white/80">შიდა ოპერატიული მართვის პორტალი</div>
-        </div>
       </section>
 
       {/* მარჯვენა: შესვლა */}
-      <section className="flex items-center justify-center rounded-2xl border bg-background p-6 md:p-10">
+      <section className="flex items-center justify-center overflow-y-auto bg-background p-6 md:p-10">
         <div className="w-full max-w-sm">
           <div className="mb-8">
-            <div className="mb-3 inline-flex size-12 items-center justify-center rounded-xl bg-foreground text-lg font-bold text-background">
-              C
-            </div>
             <h1 className="text-2xl font-bold">მოგესალმებით</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               შედით CMG-ში თქვენი ანგარიშით
@@ -111,9 +103,7 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <p className="mt-8 text-center text-xs text-muted-foreground">
-            CMG · Simetria Park
-          </p>
+          <p className="mt-8 text-center text-xs text-muted-foreground">CMG · Simetria Park</p>
         </div>
       </section>
     </main>
