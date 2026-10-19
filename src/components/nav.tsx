@@ -2,17 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, ListTodo, Wallet, Users, Sparkles, FolderOpen } from "lucide-react";
+import {
+  CalendarDays,
+  FolderOpen,
+  LayoutDashboard,
+  Sparkles,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { roleLabels } from "@/lib/labels";
 
 const items = [
-  { href: "/", label: "მთავარი", icon: LayoutDashboard },
-  { href: "/operations", label: "ოპერაციები", icon: ListTodo },
-  { href: "/finance", label: "ფინანსები", icon: Wallet },
-  { href: "/staff", label: "პერსონალი", icon: Users },
-  { href: "/services", label: "სერვისები", icon: Sparkles },
-  { href: "/documents", label: "დოკუმენტები", icon: FolderOpen },
+  { href: "/", match: "/", label: "მთავარი", icon: LayoutDashboard },
+  { href: "/operations/plan", match: "/operations", label: "კვირის გეგმა", icon: CalendarDays },
+  { href: "/finance", match: "/finance", label: "გადახდები", icon: Wallet },
+  { href: "/staff", match: "/staff", label: "დასწრება", icon: Users },
+  { href: "/services", match: "/services", label: "დასუფთავება", icon: Sparkles },
+  { href: "/documents", match: "/documents", label: "დოკუმენტები", icon: FolderOpen },
 ];
 
 export function Nav({
@@ -25,8 +32,8 @@ export function Nav({
   signOut: () => Promise<void>;
 }) {
   const pathname = usePathname();
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
+  const isActive = (match: string) =>
+    match === "/" ? pathname === "/" : pathname.startsWith(match);
   const roleLabel = roleLabels[role] ?? role;
 
   return (
@@ -38,12 +45,12 @@ export function Nav({
           <div className="text-sm font-medium">{name}</div>
           <div className="text-xs text-muted-foreground">{roleLabel}</div>
         </div>
-        {items.map(({ href, label, icon: Icon }) => (
+        {items.map(({ href, match, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
             className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${
-              isActive(href) ? "bg-muted font-medium" : "hover:bg-muted/60"
+              isActive(match) ? "bg-muted font-medium" : "hover:bg-muted/60"
             }`}
           >
             <Icon className="size-4" />
@@ -72,12 +79,12 @@ export function Nav({
 
       {/* ტელეფონი: ქვედა პანელი */}
       <nav className="fixed inset-x-0 bottom-0 z-10 grid grid-cols-6 border-t bg-background md:hidden">
-        {items.map(({ href, label, icon: Icon }) => (
+        {items.map(({ href, match, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
             className={`flex flex-col items-center gap-1 py-2 text-[10px] ${
-              isActive(href) ? "font-medium text-foreground" : "text-muted-foreground"
+              isActive(match) ? "font-medium text-foreground" : "text-muted-foreground"
             }`}
           >
             <Icon className="size-5" />

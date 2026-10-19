@@ -8,15 +8,14 @@ async function Shell({ children }: { children: React.ReactNode }) {
   await connection();
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const { data: auth } = await supabase.auth.getClaims();
+  const claims = auth?.claims;
+  if (!claims) redirect("/login");
 
   const { data: profile } = await supabase
     .from("profiles")
     .select("full_name, role")
-    .eq("id", user.id)
+    .eq("id", claims.sub)
     .single();
 
   async function signOut() {

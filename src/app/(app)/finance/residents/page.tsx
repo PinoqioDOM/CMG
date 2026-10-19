@@ -37,7 +37,7 @@ async function Content() {
   return (
     <>
       <PageHeader
-        title="ფინანსები"
+        title="გადახდები"
         description="მობინადრეები"
         action={
           <div className="flex flex-wrap gap-2">

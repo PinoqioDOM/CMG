@@ -79,13 +79,11 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   const q = (sp.q ?? "").trim().toLowerCase();
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: auth } = await supabase.auth.getClaims();
   const { data: me } = await supabase
     .from("profiles")
     .select("role")
-    .eq("id", user?.id ?? "")
+    .eq("id", auth?.claims?.sub ?? "")
     .single();
   const isManager = me?.role === "manager";
   const canEdit = isManager || me?.role === "assistant";
@@ -119,7 +117,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
 
   const header = (
     <PageHeader
-      title="ფინანსები"
+      title="გადახდები"
       action={
         <div className="flex flex-wrap gap-2">
           <a

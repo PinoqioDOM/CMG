@@ -100,16 +100,19 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   return (
     <>
       <PageHeader
-        title="ოპერაციები"
+        title="კვირის გეგმა"
         action={isIncidents ? <IncidentForm /> : <TaskForm employees={employees ?? []} />}
       />
 
       <div className="mb-4 flex gap-1">
+        <Link href="/operations/plan" className={tabCls(false)}>
+          კვირის გეგმა
+        </Link>
         <Link href="/operations" className={tabCls(!isIncidents)}>
-          დავალებები
+          დაფა
         </Link>
         <Link href="/operations?tab=incidents" className={tabCls(isIncidents)}>
-          ინციდენტები
+          ტექნიკური რეპორტი
         </Link>
       </div>
 

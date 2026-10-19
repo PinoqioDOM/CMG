@@ -139,3 +139,55 @@ export async function deleteIncident(id: string) {
   revalidatePath("/operations");
   return { ok: true };
 }
+
+const updateSchema = taskSchema.extend({
+  status: z.enum(["todo", "in_progress", "done"]),
+});
+
+export async function updateTask(id: string, formData: FormData) {
+  const tid = z.string().uuid().safeParse(id);
+  const parsed = updateSchema.safeParse(Object.fromEntries(formData));
+  if (!tid.success) return { error: "არასწორი მონაცემი" };
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const v = parsed.data;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("tasks")
+    .update({
+      title: v.title,
+      description: v.description || null,
+      category: v.category,
+      priority: v.priority,
+      due_date: v.due_date || null,
+      assigned_to: v.assigned_to || null,
+      status: v.status,
+    })
+    .eq("id", tid.data)
+    .select("id");
+  if (error) return { error: "ვერ შეინახა: " + error.message };
+  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
+
+  revalidatePath("/operations", "layout");
+  return { ok: true };
+}
+
+export async function setTaskDate(id: string, date: string | null) {
+  const tid = z.string().uuid().safeParse(id);
+  const d = z
+    .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.null()])
+    .safeParse(date);
+  if (!tid.success || !d.success) return { error: "არასწორი მონაცემი" };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("tasks")
+    .update({ due_date: d.data })
+    .eq("id", tid.data)
+    .select("id");
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
+
+  revalidatePath("/operations", "layout");
+  return { ok: true };
+}

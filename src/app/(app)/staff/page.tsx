@@ -62,7 +62,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
     return (
       <>
         <PageHeader
-          title="პერსონალი"
+          title="დასწრება"
           action={
             <div className="flex flex-wrap gap-2">
               <BulkAddForm />
@@ -114,7 +114,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
 
   return (
     <>
-      <PageHeader title="პერსონალი" description="დასწრება და ცვლები" />
+      <PageHeader title="დასწრება" description="დასწრება და ცვლები" />
       {tabs}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">

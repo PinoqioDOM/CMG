@@ -114,7 +114,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
 
     return (
       <>
-        <PageHeader title="სერვისები" description="მომარაგება" action={<SupplyForm />} />
+        <PageHeader title="დასუფთავება" description="მომარაგება" action={<SupplyForm />} />
         {tabs}
         <Supplies items={supplies} photoUrls={photoUrls} />
       </>
@@ -130,7 +130,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
       .order("sort_order");
     return (
       <>
-        <PageHeader title="სერვისები" description="გეგმის შაბლონები" action={<ServiceForm />} />
+        <PageHeader title="დასუფთავება" description="გეგმის შაბლონები" action={<ServiceForm />} />
         {tabs}
         {roleTabs}
         <TemplatesManager
@@ -154,7 +154,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
 
     return (
       <>
-        <PageHeader title="სერვისები" description="დახურული გეგმების არქივი" />
+        <PageHeader title="დასუფთავება" description="დახურული გეგმების არქივი" />
         {tabs}
         {roleTabs}
         <div className="space-y-2">
@@ -261,7 +261,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
 
   return (
     <>
-      <PageHeader title="სერვისები" description="დასუფთავების გეგმა" />
+      <PageHeader title="დასუფთავება" description="დასუფთავების გეგმა" />
       {tabs}
       {roleTabs}
 

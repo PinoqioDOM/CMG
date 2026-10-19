@@ -144,7 +144,7 @@ async function Content() {
     supabase.from("checklist_logs").select("template_id").eq("done_date", today),
   ]);
 
-  // ---------- ფინანსები ----------
+  // ---------- გადახდები ----------
   const propName = new Map((props ?? []).map((p) => [p.id, p.number as string]));
   const cur = (curPays ?? []) as Pay[];
   const curDue = cur.reduce((s, p) => s + p.amount_due, 0);
@@ -215,8 +215,8 @@ async function Content() {
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {/* ფინანსები */}
-        <Card title="ფინანსები" href="/finance">
+        {/* გადახდები */}
+        <Card title="გადახდები" href="/finance">
           <div className="grid grid-cols-3 gap-3">
             <Big value={money(curDue)} label="ამ თვეში" />
             <Big value={money(curPaid)} label="გადახდილი" tone="text-green-700" />
@@ -269,7 +269,7 @@ async function Content() {
         </Card>
 
         {/* დავალებები */}
-        <Card title="ღია დავალებები" href="/operations">
+        <Card title="კვირის გეგმა" href="/operations">
           <div className="grid grid-cols-3 gap-3">
             <Big value={String(todo)} label="გასაკეთებელი" />
             <Big value={String(inProgress)} label="მიმდინარე" />
@@ -300,7 +300,7 @@ async function Content() {
         </Card>
 
         {/* ინციდენტები */}
-        <Card title="ღია ინციდენტები" href="/operations?tab=incidents">
+        <Card title="ტექნიკური საკითხები" href="/operations?tab=incidents">
           <Big
             value={String(incCount ?? 0)}
             label="აქტიური"
@@ -353,7 +353,7 @@ async function Content() {
         </Card>
 
         {/* ჩეკლისტი */}
-        <Card title="დღევანდელი დასუფთავების გეგმა" href="/services">
+        <Card title="დასუფთავების სამუშაო აღწერა" href="/services">
           <div className="space-y-3">
             {checklist.map((c) => (
               <div key={c.role}>

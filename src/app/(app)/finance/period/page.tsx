@@ -168,7 +168,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
 
   return (
     <>
-      <PageHeader title="ფინანსები" description="პერიოდის ანგარიში" />
+      <PageHeader title="გადახდები" description="პერიოდის ანგარიში" />
 
       <div className="mb-4 flex flex-wrap gap-1">
         <Link href="/finance" className={tabCls(false)}>
