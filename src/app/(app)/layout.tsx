@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { Nav } from "@/components/nav";
+import { AppShell } from "@/components/app-shell";
 
 async function Shell({ children }: { children: React.ReactNode }) {
   await connection();
@@ -26,12 +26,9 @@ async function Shell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col gap-2 bg-muted/40 p-2 md:flex-row md:items-start md:gap-3 md:p-3">
-      <Nav name={profile?.full_name ?? ""} role={profile?.role ?? ""} signOut={signOut} />
-      <main className="min-w-0 flex-1 rounded-2xl border bg-background p-4 pb-24 md:p-8">
-        {children}
-      </main>
-    </div>
+    <AppShell name={profile?.full_name ?? ""} role={profile?.role ?? ""} signOut={signOut}>
+      {children}
+    </AppShell>
   );
 }
 

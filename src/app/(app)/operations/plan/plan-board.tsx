@@ -11,8 +11,9 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { FormField } from "@/components/form-field";
 import { SelectField } from "@/components/native-fields";
-import { categoryLabels, priorityLabels, taskStatusLabels } from "@/lib/labels";
+import { categoryLabels, monthNames, priorityLabels, taskStatusLabels } from "@/lib/labels";
 import {
   createTask,
   deleteTask,
@@ -29,6 +30,13 @@ import {
   updateTask,
   updateTaskStatus,
 } from "../actions";
+import {
+  addPlanItem,
+  deletePlanItem,
+  renamePlanItem,
+  saveReport,
+  togglePlanItem,
+} from "./plan-actions";
 
 export type PlanTask = {
   id: string;
@@ -42,19 +50,143 @@ export type PlanTask = {
   assignee: string | null;
 };
 
+export type PlanItem = {
+  id: string;
+  scope: "week" | "month";
+  period_start: string;
+  title: string;
+  done: boolean;
+};
+
 type Update = { id: string; due_date?: string | null; status?: PlanTask["status"] };
 type DialogState = { task?: PlanTask; date?: string } | null;
 
-const weekdayShort = ["ორშ", "სამ", "ოთხ", "ხუთ", "პარ", "შაბ", "კვ"];
+const weekdayNames = [
+  "ორშაბათი",
+  "სამშაბათი",
+  "ოთხშაბათი",
+  "ხუთშაბათი",
+  "პარასკევი",
+  "შაბათი",
+  "კვირა",
+];
+const letters = ["M", "T", "W", "T", "F", "S", "S"];
 const statusCls: Record<string, string> = {
   todo: "bg-muted",
   in_progress: "bg-amber-100 text-amber-900",
   done: "bg-green-100 text-green-800",
 };
-const dm = (s: string) => s.split("-").reverse().slice(0, 2).join(".");
 const toOptions = (m: Record<string, string>) =>
   Object.entries(m).map(([value, label]) => ({ value, label }));
 
+// ---------- ჩეკლისტი (კვირის და თვის გეგმა) ----------
+function CheckList({
+  scope,
+  periodStart,
+  items,
+  title,
+}: {
+  scope: "week" | "month";
+  periodStart: string;
+  items: PlanItem[];
+  title: string;
+}) {
+  const [opt, flip] = useOptimistic(items, (s, id: string) =>
+    s.map((i) => (i.id === id ? { ...i, done: !i.done } : i))
+  );
+  const [, start] = useTransition();
+  const [text, setText] = useState("");
+  const doneCount = opt.filter((i) => i.done).length;
+
+  function toggle(i: PlanItem) {
+    start(async () => {
+      flip(i.id);
+      const r = await togglePlanItem(i.id, !i.done);
+      if ("error" in r) alert(r.error);
+    });
+  }
+
+  function add(e: React.FormEvent) {
+    e.preventDefault();
+    const v = text.trim();
+    if (!v) return;
+    start(async () => {
+      const r = await addPlanItem(scope, periodStart, v);
+      if ("error" in r) alert(r.error);
+      else setText("");
+    });
+  }
+
+  function rename(i: PlanItem, value: string) {
+    const v = value.trim();
+    if (!v || v === i.title) return;
+    start(async () => {
+      const r = await renamePlanItem(i.id, v);
+      if ("error" in r) alert(r.error);
+    });
+  }
+
+  function remove(i: PlanItem) {
+    if (!confirm(`„${i.title}" წაიშლება. გავაგრძელო?`)) return;
+    start(async () => {
+      const r = await deletePlanItem(i.id);
+      if ("error" in r) alert(r.error);
+    });
+  }
+
+  return (
+    <div className="rounded-lg border p-2">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-sm font-semibold">{title}</div>
+        <div className="text-xs text-muted-foreground">
+          {doneCount} / {opt.length}
+        </div>
+      </div>
+      <div className="space-y-1">
+        {opt.map((i) => (
+          <div key={i.id} className="group flex items-start gap-1.5">
+            <input
+              type="checkbox"
+              checked={i.done}
+              onChange={() => toggle(i)}
+              className="mt-1 size-4 shrink-0"
+              aria-label="შესრულებული"
+            />
+            <input
+              key={`${i.id}-${i.title}`}
+              defaultValue={i.title}
+              onBlur={(e) => rename(i, e.target.value)}
+              className={`min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 text-sm leading-snug outline-none focus:bg-muted ${
+                i.done ? "text-muted-foreground line-through" : ""
+              }`}
+            />
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              aria-label="წაშლა"
+              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-60 hover:bg-muted md:opacity-0 md:group-hover:opacity-100"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <form onSubmit={add} className="mt-2 flex gap-1">
+        <Input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="+ ახალი პუნქტი"
+          className="h-9 text-sm"
+        />
+        <Button type="submit" variant="outline" className="h-9 px-2" aria-label="დამატება">
+          <Plus className="size-4" />
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+// ---------- დავალების ბარათი ----------
 function Chip({
   t,
   onOpen,
@@ -101,56 +233,85 @@ function Chip({
   );
 }
 
-function DayCell({
+// ---------- დღის სვეტი ----------
+function DayColumn({
   date,
+  name,
   inMonth,
   isToday,
   tasks,
+  report,
   onAdd,
   onOpen,
   onToggle,
 }: {
   date: string;
+  name: string;
   inMonth: boolean;
   isToday: boolean;
   tasks: PlanTask[];
+  report: string;
   onAdd: (date: string) => void;
   onOpen: (t: PlanTask) => void;
   onToggle: (t: PlanTask) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `day:${date}` });
-  const day = Number(date.slice(8));
+  const [, start] = useTransition();
+
+  function saveRep(v: string) {
+    if (v.trim() === report.trim()) return;
+    start(async () => {
+      const r = await saveReport(date, v);
+      if ("error" in r) alert(r.error);
+    });
+  }
+
   return (
     <div
       ref={setNodeRef}
-      className={`group min-h-28 space-y-1 border-b border-l p-1 ${
+      className={`flex min-h-64 flex-col gap-2 rounded-lg border p-2 ${
         isOver ? "bg-muted" : inMonth ? "" : "bg-muted/30"
       }`}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex items-baseline justify-between">
+        <span className="text-sm font-semibold">{name}</span>
         <span
           className={`text-xs ${
             isToday
               ? "rounded bg-foreground px-1.5 py-0.5 font-semibold text-background"
-              : inMonth
-                ? "font-medium"
-                : "text-muted-foreground"
+              : "text-muted-foreground"
           }`}
         >
-          {day === 1 ? dm(date) : day}
+          {Number(date.slice(8))}
         </span>
-        <button
-          type="button"
-          onClick={() => onAdd(date)}
-          aria-label="დავალების დამატება"
-          className="rounded p-0.5 text-muted-foreground opacity-60 hover:bg-muted hover:opacity-100 md:opacity-0 md:group-hover:opacity-100"
-        >
-          <Plus className="size-3.5" />
-        </button>
       </div>
-      {tasks.map((t) => (
-        <Chip key={t.id} t={t} onOpen={onOpen} onToggle={onToggle} />
-      ))}
+
+      <div>
+        <div className="mb-1 text-[11px] font-medium text-muted-foreground">რეპორტი</div>
+        <textarea
+          key={`${date}-${report}`}
+          defaultValue={report}
+          onBlur={(e) => saveRep(e.target.value)}
+          rows={4}
+          placeholder="რა მოხდა დღეს..."
+          className="w-full resize-y rounded-md border bg-background px-2 py-1.5 text-xs leading-snug"
+        />
+      </div>
+
+      <div className="flex-1 space-y-1">
+        <div className="text-[11px] font-medium text-muted-foreground">To-Do</div>
+        {tasks.map((t) => (
+          <Chip key={t.id} t={t} onOpen={onOpen} onToggle={onToggle} />
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onAdd(date)}
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+      >
+        <Plus className="size-3.5" /> დავალება
+      </button>
     </div>
   );
 }
@@ -166,10 +327,7 @@ function UndatedBox({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: "undated" });
   return (
-    <div
-      ref={setNodeRef}
-      className={`mt-4 space-y-2 rounded-lg border p-3 ${isOver ? "bg-muted" : ""}`}
-    >
+    <div ref={setNodeRef} className={`space-y-2 rounded-lg border p-3 ${isOver ? "bg-muted" : ""}`}>
       <div className="text-sm font-semibold">
         თარიღის გარეშე ({tasks.length}){" "}
         <span className="font-normal text-muted-foreground">
@@ -188,6 +346,7 @@ function UndatedBox({
   );
 }
 
+// ---------- დავალების ფანჯარა ----------
 function TaskDialog({
   state,
   employees,
@@ -300,18 +459,25 @@ function TaskDialog({
   );
 }
 
+// ---------- მთავარი ----------
 export function PlanBoard({
   ym,
   weeks,
   tasks,
   employees,
   today,
+  monthItems,
+  weekItems,
+  reports,
 }: {
   ym: string;
   weeks: string[][];
   tasks: PlanTask[];
   employees: { id: string; full_name: string }[];
   today: string;
+  monthItems: PlanItem[];
+  weekItems: Record<string, PlanItem[]>;
+  reports: Record<string, string>;
 }) {
   const [opt, apply] = useOptimistic(tasks, (s, u: Update) =>
     s.map((t) =>
@@ -341,7 +507,9 @@ export function PlanBoard({
 
   const inMonth = opt.filter((t) => t.due_date?.startsWith(ym));
   const done = inMonth.filter((t) => t.status === "done").length;
-  const overdue = inMonth.filter((t) => t.status !== "done" && (t.due_date as string) < today).length;
+  const overdue = inMonth.filter(
+    (t) => t.status !== "done" && (t.due_date as string) < today
+  ).length;
 
   function toggle(t: PlanTask) {
     const status = t.status === "done" ? "todo" : "done";
@@ -389,63 +557,96 @@ export function PlanBoard({
       </div>
 
       <DndContext id="month-plan" sensors={sensors} onDragEnd={onDragEnd}>
-        <div className="overflow-x-auto rounded-lg border">
-          <div className="min-w-[900px]">
-            <div className="grid grid-cols-[72px_repeat(7,minmax(0,1fr))] bg-muted/40 text-xs">
-              <div className="p-2 text-muted-foreground">კვირა</div>
-              {weekdayShort.map((d) => (
-                <div key={d} className="border-l p-2 text-center font-medium">
-                  {d}
-                </div>
-              ))}
-            </div>
-
-            {weeks.map((days) => {
-              const weekTasks = days.flatMap((d) => byDate.get(d) ?? []);
-              const weekDone = weekTasks.filter((t) => t.status === "done").length;
-              return (
-                <div key={days[0]} className="grid grid-cols-[72px_repeat(7,minmax(0,1fr))]">
-                  <div className="space-y-1 border-b p-2 text-xs">
-                    <div className="font-semibold">
-                      {Number(days[0].slice(8))}–{Number(days[6].slice(8))}
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="space-y-6">
+            {weeks.map((days) => (
+              <section
+                key={days[0]}
+                className="grid gap-3 border-t pt-4 first:border-t-0 first:pt-0 lg:grid-cols-[210px_minmax(0,1fr)]"
+              >
+                {/* მარცხნივ: კვირის კალენდარი და კვირის გეგმა */}
+                <div className="space-y-3">
+                  <div className="rounded-lg border p-2">
+                    <div className="mb-1 flex items-center justify-between text-xs">
+                      <span className="font-semibold">
+                        {monthNames[Number(days[3].slice(5, 7)) - 1]}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {Number(days[0].slice(8))}–{Number(days[6].slice(8))}
+                      </span>
                     </div>
-                    <div className="text-muted-foreground">
-                      {weekDone}/{weekTasks.length}
+                    <div className="grid grid-cols-7 text-center text-[10px] text-muted-foreground">
+                      {letters.map((l, i) => (
+                        <div key={i}>{l}</div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 text-center text-xs">
+                      {days.map((d) => (
+                        <div
+                          key={d}
+                          className={`rounded py-0.5 ${
+                            d === today
+                              ? "bg-foreground font-semibold text-background"
+                              : d.startsWith(ym)
+                                ? ""
+                                : "text-muted-foreground"
+                          }`}
+                        >
+                          {Number(d.slice(8))}
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  {days.map((d) => (
-                    <DayCell
-                      key={d}
-                      date={d}
-                      inMonth={d.startsWith(ym)}
-                      isToday={d === today}
-                      tasks={byDate.get(d) ?? []}
-                      onAdd={(date) => setDialog({ date })}
-                      onOpen={(task) => setDialog({ task })}
-                      onToggle={toggle}
-                    />
-                  ))}
+                  <CheckList
+                    key={`w-${days[0]}`}
+                    scope="week"
+                    periodStart={days[0]}
+                    items={weekItems[days[0]] ?? []}
+                    title="კვირის გეგმა"
+                  />
                 </div>
-              );
-            })}
+
+                {/* შუაში: 7 დღე */}
+                <div className="overflow-x-auto">
+                  <div className="grid min-w-[980px] grid-cols-7 gap-2">
+                    {days.map((d, i) => (
+                      <DayColumn
+                        key={d}
+                        date={d}
+                        name={weekdayNames[i]}
+                        inMonth={d.startsWith(ym)}
+                        isToday={d === today}
+                        tasks={byDate.get(d) ?? []}
+                        report={reports[d] ?? ""}
+                        onAdd={(date) => setDialog({ date })}
+                        onOpen={(task) => setDialog({ task })}
+                        onToggle={toggle}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </section>
+            ))}
+
+            <UndatedBox
+              tasks={undated}
+              onOpen={(task) => setDialog({ task })}
+              onToggle={toggle}
+            />
           </div>
+
+          {/* მარჯვნივ: თვის გეგმა */}
+          <aside className="order-first xl:sticky xl:top-3 xl:order-last xl:max-h-[calc(100vh-1.5rem)] xl:self-start xl:overflow-y-auto">
+            <CheckList
+              key={`m-${ym}`}
+              scope="month"
+              periodStart={`${ym}-01`}
+              items={monthItems}
+              title={`თვის გეგმა · ${monthNames[Number(ym.slice(5)) - 1]}`}
+            />
+          </aside>
         </div>
-
-        <UndatedBox
-          tasks={undated}
-          onOpen={(task) => setDialog({ task })}
-          onToggle={toggle}
-        />
       </DndContext>
-
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-        <Button variant="outline" className="h-9" onClick={() => setDialog({ date: today })}>
-          + დავალება
-        </Button>
-        <span className="self-center">
-          დაჭერა: რედაქტირება · გადათრევა: სხვა დღეზე · ჩამრთველი: შესრულებული
-        </span>
-      </div>
 
       {dialog && (
         <TaskDialog

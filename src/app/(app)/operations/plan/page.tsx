@@ -4,7 +4,7 @@ import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { monthNames } from "@/lib/labels";
-import { PlanBoard, type PlanTask } from "./plan-board";
+import { PlanBoard, type PlanItem, type PlanTask } from "./plan-board";
 
 type SearchParams = Promise<{ ym?: string }>;
 
@@ -70,26 +70,53 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   }
 
   const supabase = await createClient();
-  const [{ data: dated }, { data: undated }, { data: emps }] = await Promise.all([
-    supabase
-      .from("tasks")
-      .select(select)
-      .gte("due_date", iso(startTs))
-      .lte("due_date", iso(endTs))
-      .limit(800),
-    supabase
-      .from("tasks")
-      .select(select)
-      .is("due_date", null)
-      .neq("status", "done")
-      .limit(200),
-    supabase.from("employees").select("id, full_name").eq("is_active", true).order("full_name"),
-  ]);
+  const weekStarts = weeks.map((w) => w[0]);
+
+  const [{ data: dated }, { data: undated }, { data: emps }, { data: items }, { data: reps }] =
+    await Promise.all([
+      supabase
+        .from("tasks")
+        .select(select)
+        .gte("due_date", iso(startTs))
+        .lte("due_date", iso(endTs))
+        .limit(800),
+      supabase
+        .from("tasks")
+        .select(select)
+        .is("due_date", null)
+        .neq("status", "done")
+        .limit(200),
+      supabase.from("employees").select("id, full_name").eq("is_active", true).order("full_name"),
+      supabase
+        .from("plan_items")
+        .select("id, scope, period_start, title, done")
+        .in("period_start", [`${ym}-01`, ...weekStarts])
+        .order("created_at"),
+      supabase
+        .from("daily_reports")
+        .select("report_date, content")
+        .gte("report_date", iso(startTs))
+        .lte("report_date", iso(endTs)),
+    ]);
 
   const tasks = [
     ...((dated ?? []) as unknown as Row[]),
     ...((undated ?? []) as unknown as Row[]),
   ].map(toTask);
+
+  const planItems = (items ?? []) as PlanItem[];
+  const monthItems = planItems.filter(
+    (i) => i.scope === "month" && i.period_start === `${ym}-01`
+  );
+  const weekItems: Record<string, PlanItem[]> = {};
+  for (const i of planItems) {
+    if (i.scope === "week") (weekItems[i.period_start] ??= []).push(i);
+  }
+
+  const reports: Record<string, string> = {};
+  for (const r of (reps ?? []) as { report_date: string; content: string | null }[]) {
+    reports[r.report_date] = r.content ?? "";
+  }
 
   return (
     <>
@@ -131,6 +158,9 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
         tasks={tasks}
         employees={(emps ?? []) as { id: string; full_name: string }[]}
         today={today}
+        monthItems={monthItems}
+        weekItems={weekItems}
+        reports={reports}
       />
     </>
   );
