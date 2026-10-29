@@ -6,7 +6,7 @@ import {
   CalendarDays,
   FolderOpen,
   LayoutDashboard,
-  Sparkles,
+  Package,
   Users,
   Wallet,
   Wrench,
@@ -20,7 +20,7 @@ const items = [
   { href: "/operations", match: "/operations", exact: true, label: "ტექნიკური საკითხები", icon: Wrench },
   { href: "/finance", match: "/finance", label: "გადახდები", icon: Wallet },
   { href: "/staff", match: "/staff", label: "დასწრება", icon: Users },
-  { href: "/services", match: "/services", label: "დასუფთავება", icon: Sparkles },
+  { href: "/supplies", match: "/supplies", label: "მომარაგება", icon: Package },
   { href: "/documents", match: "/documents", label: "დოკუმენტები", icon: FolderOpen },
 ];
 

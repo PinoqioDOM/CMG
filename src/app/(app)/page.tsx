@@ -76,6 +76,33 @@ function Card({
   );
 }
 
+function Donut({ pct }: { pct: number }) {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg viewBox="0 0 120 120" className="size-36 shrink-0">
+      <circle cx="60" cy="60" r={r} fill="none" strokeWidth="14" className="stroke-red-200" />
+      <circle
+        cx="60"
+        cy="60"
+        r={r}
+        fill="none"
+        strokeWidth="14"
+        strokeLinecap="round"
+        className="stroke-green-600"
+        strokeDasharray={`${(pct / 100) * c} ${c}`}
+        transform="rotate(-90 60 60)"
+      />
+      <text x="60" y="58" textAnchor="middle" className="fill-foreground text-[22px] font-bold">
+        {pct}%
+      </text>
+      <text x="60" y="76" textAnchor="middle" className="fill-muted-foreground text-[9px]">
+        გადახდილი
+      </text>
+    </svg>
+  );
+}
+
 function Big({ value, label, tone }: { value: string; label: string; tone?: string }) {
   return (
     <div>
@@ -105,6 +132,7 @@ async function Content() {
     { data: docs },
     { data: tpl },
     { data: logs },
+    { data: resRows },
   ] = await Promise.all([
     supabase.from("payments_view").select("*").eq("year", cy).eq("month", cm),
     supabase.from("payments_view").select("*").gt("balance", 0).limit(3000),
@@ -142,6 +170,7 @@ async function Content() {
       .eq("frequency", "daily")
       .eq("is_active", true),
     supabase.from("checklist_logs").select("template_id").eq("done_date", today),
+    supabase.from("residents").select("property_id"),
   ]);
 
   // ---------- გადახდები ----------
@@ -164,6 +193,13 @@ async function Content() {
     .map(([id, g]) => ({ id, ...g }))
     .sort((a, b) => b.total - a.total);
   const totalDebt = debtors.reduce((s, d) => s + d.total, 0);
+  const debtorIds = new Set(debtors.map((d) => d.id));
+  const residentRows = resRows ?? [];
+  const residentsTotal = residentRows.length;
+  const residentsInDebt = residentRows.filter((r) => debtorIds.has(r.property_id)).length;
+  const residentsPaid = residentsTotal - residentsInDebt;
+  const paidPct = residentsTotal ? Math.round((residentsPaid / residentsTotal) * 100) : 0;
+  const monthPct = curDue > 0 ? Math.round((curPaid / curDue) * 100) : 0;
 
   // ---------- დღევანდელი ცვლა ----------
   const empName = new Map((emps ?? []).map((e) => [e.id, e.full_name as string]));
@@ -215,33 +251,60 @@ async function Content() {
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {/* გადახდები */}
+        {/* ფინანსები */}
         <Card title="გადახდები" href="/finance">
-          <div className="grid grid-cols-3 gap-3">
-            <Big value={money(curDue)} label="ამ თვეში" />
-            <Big value={money(curPaid)} label="გადახდილი" tone="text-green-700" />
-            <Big
-              value={money(totalDebt)}
-              label="ვადაგადაცილებული"
-              tone={totalDebt > 0 ? "text-red-600" : ""}
-            />
+          <div className="flex items-center gap-4">
+            <Donut pct={paidPct} />
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="size-3 rounded-sm bg-green-600" />
+                გადახდილი <b>{residentsPaid}</b>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="size-3 rounded-sm bg-red-300" />
+                დავალიანებაში <b>{residentsInDebt}</b>
+              </div>
+              <div className="text-xs text-muted-foreground">სულ მობინადრე: {residentsTotal}</div>
+            </div>
           </div>
-          {debtors.length > 0 ? (
-            <ul className="space-y-1 text-sm">
-              {debtors.slice(0, 4).map((d) => (
-                <li key={d.id} className="flex justify-between">
+
+          <div className="border-t pt-3">
+            <div className="text-xs text-muted-foreground">დავალიანების ოდენობა</div>
+            <div className={`text-xl font-bold ${totalDebt > 0 ? "text-red-600" : ""}`}>
+              {money(totalDebt)}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-1 flex flex-wrap justify-between gap-x-2 text-xs text-muted-foreground">
+              <span>ამ თვის გადახდა ({monthPct}%)</span>
+              <span>
+                {money(curPaid)} / {money(curDue)}
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded bg-muted">
+              <div
+                className="h-full bg-green-500"
+                style={{ width: `${Math.min(monthPct, 100)}%` }}
+              />
+            </div>
+          </div>
+
+          {debtors.length > 0 && (
+            <ul className="space-y-1 border-t pt-3 text-sm">
+              {debtors.slice(0, 3).map((d) => (
+                <li key={d.id} className="flex justify-between gap-2">
                   <span>
-                    {propName.get(d.id)} <span className="text-muted-foreground">· {d.months} თვე</span>
+                    {propName.get(d.id)}{" "}
+                    <span className="text-muted-foreground">· {d.months} თვე</span>
                   </span>
-                  <b className="text-red-600">{money(d.total)}</b>
+                  <b className="whitespace-nowrap text-red-600">{money(d.total)}</b>
                 </li>
               ))}
-              {debtors.length > 4 && (
-                <li className="text-muted-foreground">+ კიდევ {debtors.length - 4} ობიექტი</li>
+              {debtors.length > 3 && (
+                <li className="text-muted-foreground">+ კიდევ {debtors.length - 3} ობიექტი</li>
               )}
             </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">ვადაგადაცილებული გადახდა არ არის 🎉</p>
           )}
         </Card>
 
@@ -269,7 +332,7 @@ async function Content() {
         </Card>
 
         {/* დავალებები */}
-        <Card title="კვირის გეგმა" href="/operations">
+        <Card title="კვირის გეგმა" href="/operations/plan">
           <div className="grid grid-cols-3 gap-3">
             <Big value={String(todo)} label="გასაკეთებელი" />
             <Big value={String(inProgress)} label="მიმდინარე" />
@@ -300,7 +363,7 @@ async function Content() {
         </Card>
 
         {/* ინციდენტები */}
-        <Card title="ტექნიკური საკითხები" href="/operations?tab=incidents">
+        <Card title="ტექნიკური საკითხები" href="/operations">
           <Big
             value={String(incCount ?? 0)}
             label="აქტიური"
