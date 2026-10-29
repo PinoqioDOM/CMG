@@ -21,8 +21,6 @@ type Row = {
 };
 
 const iso = (ts: number) => new Date(ts).toISOString().slice(0, 10);
-const tabCls = (active: boolean) =>
-  `rounded-md px-3 py-2 text-sm ${active ? "bg-muted font-medium" : "text-muted-foreground"}`;
 const pillCls = "rounded-md border px-3 py-2 text-sm";
 
 function shift(ym: string, d: number) {
@@ -93,10 +91,10 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
         .in("period_start", [`${ym}-01`, ...weekStarts])
         .order("created_at"),
       supabase
-        .from("daily_reports")
-        .select("report_date, content")
-        .gte("report_date", iso(startTs))
-        .lte("report_date", iso(endTs)),
+        .from("day_reports")
+        .select("date, body")
+        .gte("date", iso(startTs))
+        .lte("date", iso(endTs)),
     ]);
 
   const tasks = [
@@ -114,31 +112,19 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   }
 
   const reports: Record<string, string> = {};
-  for (const r of (reps ?? []) as { report_date: string; content: string | null }[]) {
-    reports[r.report_date] = r.content ?? "";
+  for (const r of (reps ?? []) as { date: string; body: string | null }[]) {
+    reports[r.date] = r.body ?? "";
   }
 
   return (
     <>
       <PageHeader title="კვირის გეგმა" description={`${monthNames[m - 1]} ${y}`} />
 
-      <div className="mb-4 flex gap-1">
-        <Link href="/operations/plan" className={tabCls(true)}>
-          კვირის გეგმა
-        </Link>
-        <Link href="/operations" className={tabCls(false)}>
-          დაფა
-        </Link>
-        <Link href="/operations?tab=incidents" className={tabCls(false)}>
-          ტექნიკური რეპორტი
-        </Link>
-      </div>
-
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Link href={`/operations/plan?ym=${shift(ym, -1)}`} className={pillCls}>
           ←
         </Link>
-        <div className="min-w-44 text-center font-semibold">
+        <div className="min-w-40 text-center font-semibold">
           {monthNames[m - 1]} {y}
         </div>
         <Link href={`/operations/plan?ym=${shift(ym, 1)}`} className={pillCls}>

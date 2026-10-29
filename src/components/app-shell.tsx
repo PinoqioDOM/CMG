@@ -14,7 +14,8 @@ export function AppShell({
   signOut: () => Promise<void>;
   children: React.ReactNode;
 }) {
-  const wide = usePathname().startsWith("/operations/plan");
+  const pathname = usePathname();
+  const wide = pathname.startsWith("/operations/plan") || pathname.startsWith("/staff");
 
   return (
     <div
