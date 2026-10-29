@@ -19,16 +19,7 @@ export async function addPlanItem(scope: string, periodStart: string, title: str
   if (!s.success || !p.success || !t.success) return { error: "არასწორი მონაცემი" } as const;
 
   const supabase = await createClient();
-  const { data: last } = await supabase
-    .from("plan_items")
-    .select("sort_order")
-    .eq("scope", s.data)
-    .eq("period_start", p.data)
-    .order("sort_order", { ascending: false })
-    .limit(1);
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: auth } = await supabase.auth.getClaims();
 
   const { data, error } = await supabase
     .from("plan_items")
@@ -36,8 +27,8 @@ export async function addPlanItem(scope: string, periodStart: string, title: str
       scope: s.data,
       period_start: p.data,
       title: t.data,
-      sort_order: (last?.[0]?.sort_order ?? 0) + 1,
-      created_by: user?.id,
+      sort_order: Math.floor(Date.now() / 1000),
+      created_by: auth?.claims?.sub,
     })
     .select("id");
   if (error) return { error: "ვერ დაემატა: " + error.message } as const;

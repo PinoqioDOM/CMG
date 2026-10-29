@@ -1,6 +1,13 @@
 "use client";
 
-import { useOptimistic, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import {
   DndContext,
   MouseSensor,
@@ -80,6 +87,45 @@ const toOptions = (m: Record<string, string>) =>
   Object.entries(m).map(([value, label]) => ({ value, label }));
 
 // ---------- ჩეკლისტი (კვირის და თვის გეგმა) ----------
+// ---------- იზრდებადი ტექსტური ველი ----------
+function AutoTextarea({
+  minRows = 1,
+  className = "",
+  onInput,
+  ...props
+}: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { minRows?: number }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  const fit = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+
+  useEffect(() => {
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [fit]);
+
+  return (
+    <textarea
+      ref={ref}
+      rows={minRows}
+      onInput={(e) => {
+        fit();
+        onInput?.(e);
+      }}
+      className={`resize-none overflow-hidden ${className}`}
+      {...props}
+    />
+  );
+}
+
+// ---------- ჩეკლისტი (კვირის და თვის გეგმა) ----------
+type ListAction = { type: "toggle"; id: string } | { type: "add"; item: PlanItem };
+
 function CheckList({
   scope,
   periodStart,
@@ -91,16 +137,18 @@ function CheckList({
   items: PlanItem[];
   title: string;
 }) {
-  const [opt, flip] = useOptimistic(items, (s, id: string) =>
-    s.map((i) => (i.id === id ? { ...i, done: !i.done } : i))
+  const [opt, mutate] = useOptimistic(items, (s, a: ListAction) =>
+    a.type === "toggle"
+      ? s.map((i) => (i.id === a.id ? { ...i, done: !i.done } : i))
+      : [...s, a.item]
   );
   const [, start] = useTransition();
-  const [text, setText] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const doneCount = opt.filter((i) => i.done).length;
 
   function toggle(i: PlanItem) {
     start(async () => {
-      flip(i.id);
+      mutate({ type: "toggle", id: i.id });
       const r = await togglePlanItem(i.id, !i.done);
       if ("error" in r) alert(r.error);
     });
@@ -108,12 +156,27 @@ function CheckList({
 
   function add(e: React.FormEvent) {
     e.preventDefault();
-    const v = text.trim();
+    const el = inputRef.current;
+    if (!el) return;
+    const v = el.value.trim();
     if (!v) return;
+    el.value = "";
     start(async () => {
+      mutate({
+        type: "add",
+        item: {
+          id: `tmp-${Date.now()}`,
+          scope,
+          period_start: periodStart,
+          title: v,
+          done: false,
+        },
+      });
       const r = await addPlanItem(scope, periodStart, v);
-      if ("error" in r) alert(r.error);
-      else setText("");
+      if ("error" in r) {
+        alert(r.error);
+        el.value = v;
+      }
     });
   }
 
@@ -143,39 +206,50 @@ function CheckList({
         </div>
       </div>
       <div className="space-y-1">
-        {opt.map((i) => (
-          <div key={i.id} className="group flex items-start gap-1.5">
-            <input
-              type="checkbox"
-              checked={i.done}
-              onChange={() => toggle(i)}
-              className="mt-1 size-4 shrink-0"
-              aria-label="შესრულებული"
-            />
-            <input
-              key={`${i.id}-${i.title}`}
-              defaultValue={i.title}
-              onBlur={(e) => rename(i, e.target.value)}
-              className={`min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 text-sm leading-snug outline-none focus:bg-muted ${
-                i.done ? "text-muted-foreground line-through" : ""
-              }`}
-            />
-            <button
-              type="button"
-              onClick={() => remove(i)}
-              aria-label="წაშლა"
-              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-60 hover:bg-muted md:opacity-0 md:group-hover:opacity-100"
-            >
-              <X className="size-3.5" />
-            </button>
-          </div>
-        ))}
+        {opt.map((i) => {
+          const temp = i.id.startsWith("tmp-");
+          return (
+            <div key={i.id} className={`group flex items-start gap-1.5 ${temp ? "opacity-60" : ""}`}>
+              <input
+                type="checkbox"
+                checked={i.done}
+                disabled={temp}
+                onChange={() => toggle(i)}
+                className="mt-1 size-4 shrink-0"
+                aria-label="შესრულებული"
+              />
+              <AutoTextarea
+                key={`${i.id}-${i.title}`}
+                defaultValue={i.title}
+                disabled={temp}
+                onBlur={(e) => rename(i, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                  }
+                }}
+                className={`min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 text-sm leading-snug outline-none [overflow-wrap:anywhere] focus:bg-muted ${
+                  i.done ? "text-muted-foreground line-through" : ""
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                disabled={temp}
+                aria-label="წაშლა"
+                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-60 hover:bg-muted md:opacity-0 md:group-hover:opacity-100"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          );
+        })}
       </div>
       <form onSubmit={add} className="mt-2 flex gap-1">
         <Input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="+ ახალი პუნქტი"
+          ref={inputRef}
+          placeholder="+ ახალი პუნქტი (Enter)"
           className="h-9 text-sm"
         />
         <Button type="submit" variant="outline" className="h-9 px-2" aria-label="დამატება">
@@ -225,7 +299,11 @@ function Chip({
         className="mt-0.5 size-3.5 shrink-0"
         aria-label="დასრულება"
       />
-      <span className={t.status === "done" ? "line-through opacity-70" : ""}>
+      <span
+        className={`min-w-0 [overflow-wrap:anywhere] ${
+          t.status === "done" ? "line-through opacity-70" : ""
+        }`}
+      >
         {t.priority === "high" ? "❗" : ""}
         {t.title}
       </span>
@@ -288,13 +366,13 @@ function DayColumn({
 
       <div>
         <div className="mb-1 text-[11px] font-medium text-muted-foreground">რეპორტი</div>
-        <textarea
+        <AutoTextarea
           key={`${date}-${report}`}
           defaultValue={report}
           onBlur={(e) => saveRep(e.target.value)}
-          rows={4}
+          minRows={4}
           placeholder="რა მოხდა დღეს..."
-          className="w-full resize-y rounded-md border bg-background px-2 py-1.5 text-xs leading-snug"
+          className="w-full rounded-md border bg-background px-2 py-1.5 text-xs leading-snug"
         />
       </div>
 
