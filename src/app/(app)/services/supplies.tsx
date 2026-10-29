@@ -24,8 +24,7 @@ export function Supplies({
   );
 
   const order = opt.filter((i) => i.quantity_needed > 0);
-  const total = order.reduce((s, i) => s + (i.unit_price ?? 0) * i.quantity_needed, 0);
-
+  
   const t = q.trim().toLowerCase();
     const shown = opt.filter((i) => {
     if (onlyOrder && i.quantity_needed === 0) return false;
@@ -60,10 +59,6 @@ export function Supplies({
         <div className="rounded-lg border p-3">
           <div className="text-xs text-muted-foreground">შესაკვეთი პოზიცია</div>
           <div className="text-lg font-semibold">{order.length}</div>
-        </div>
-        <div className="rounded-lg border p-3">
-          <div className="text-xs text-muted-foreground">სავარაუდო ჯამი</div>
-          <div className="text-lg font-semibold">{money(total)}</div>
         </div>
       </div>
 

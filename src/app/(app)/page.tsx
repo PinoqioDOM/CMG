@@ -3,7 +3,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
-import { monthNames, positionLabels } from "@/lib/labels";
+import { monthNames } from "@/lib/labels";
 
 const money = (n: number) => `${(Math.round(n * 100) / 100).toFixed(2)} ₾`;
 const dmy = (s: string) => s.split("-").reverse().join(".");
@@ -236,10 +236,6 @@ async function Content() {
 
   // ---------- ჩეკლისტი ----------
   const doneIds = new Set((logs ?? []).map((l) => l.template_id));
-  const checklist = (["housekeeper", "groundskeeper", "gardener"] as const).map((r) => {
-    const ids = (tpl ?? []).filter((t) => t.position === r).map((t) => t.id);
-    return { role: r, total: ids.length, done: ids.filter((id) => doneIds.has(id)).length };
-  });
 
   const incidents = (incs ?? []) as Incident[];
 
@@ -413,28 +409,6 @@ async function Content() {
               </ul>
             </>
           )}
-        </Card>
-
-        {/* ჩეკლისტი */}
-        <Card title="დასუფთავების სამუშაო აღწერა" href="/services">
-          <div className="space-y-3">
-            {checklist.map((c) => (
-              <div key={c.role}>
-                <div className="mb-1 flex justify-between text-sm">
-                  <span>{positionLabels[c.role]}</span>
-                  <span className="text-muted-foreground">
-                    {c.done} / {c.total}
-                  </span>
-                </div>
-                <div className="h-2 overflow-hidden rounded bg-muted">
-                  <div
-                    className="h-full bg-green-500"
-                    style={{ width: `${c.total ? (c.done / c.total) * 100 : 0}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
         </Card>
       </div>
     </>
