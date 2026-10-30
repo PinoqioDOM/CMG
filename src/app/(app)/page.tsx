@@ -60,13 +60,18 @@ function Card({
   title,
   href,
   children,
+  className = "",
 }: {
   title: string;
   href: string;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <Link href={href} className="block space-y-3 rounded-lg border p-4 hover:bg-muted/40">
+    <Link
+      href={href}
+      className={`block min-w-0 space-y-3 rounded-lg border p-4 hover:bg-muted/40 ${className}`}
+    >
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">{title}</h2>
         <span className="text-sm text-muted-foreground">→</span>
@@ -237,87 +242,80 @@ async function Content() {
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {/* ფინანსები */}
-        <Card title="გადახდები" href="/finance">
-          <div className="flex items-center gap-4">
-            <Donut pct={paidPct} />
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="size-3 rounded-sm bg-green-600" />
-                გადახდილი <b>{residentsPaid}</b>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="size-3 rounded-sm bg-red-300" />
-                დავალიანებაში <b>{residentsInDebt}</b>
-              </div>
-              <div className="text-xs text-muted-foreground">სულ მობინადრე: {residentsTotal}</div>
-            </div>
-          </div>
-
-          <div className="border-t pt-3">
-            <div className="text-xs text-muted-foreground">დავალიანების ოდენობა</div>
-            <div className={`text-xl font-bold ${totalDebt > 0 ? "text-red-600" : ""}`}>
-              {money(totalDebt)}
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-1 flex flex-wrap justify-between gap-x-2 text-xs text-muted-foreground">
-              <span>ამ თვის გადახდა ({monthPct}%)</span>
-              <span>
-                {money(curPaid)} / {money(curDue)}
-              </span>
-            </div>
-            <div className="h-2 overflow-hidden rounded bg-muted">
-              <div
-                className="h-full bg-green-500"
-                style={{ width: `${Math.min(monthPct, 100)}%` }}
-              />
-            </div>
-          </div>
-
-          {debtors.length > 0 && (
-            <ul className="space-y-1 border-t pt-3 text-sm">
-              {debtors.slice(0, 3).map((d) => (
-                <li key={d.id} className="flex justify-between gap-2">
-                  <span>
-                    {propName.get(d.id)}{" "}
-                    <span className="text-muted-foreground">· {d.months} თვე</span>
-                  </span>
-                  <b className="whitespace-nowrap text-red-600">{money(d.total)}</b>
-                </li>
-              ))}
-              {debtors.length > 3 && (
-                <li className="text-muted-foreground">+ კიდევ {debtors.length - 3} ობიექტი</li>
-              )}
-            </ul>
-          )}
-        </Card>
-
-        {/* დღევანდელი ცვლა */}
-        <Card title="დღევანდელი ცვლა" href="/staff">
-          {groups.length === 0 ? (
-            <p className="text-sm text-muted-foreground">დღეს ცვლა მონიშნული არ არის</p>
-          ) : (
-            <div className="space-y-2 text-sm">
-              {groups.map((g) => (
-                <div key={g.key}>
-                  <div className="text-xs text-muted-foreground">{shiftLabels[g.key]}</div>
-                  <div className="font-medium">
-                    {g.list.map((a) => empName.get(a.employee_id) ?? "—").join(", ")}
+        {/* ზედა რიგი: გადახდები (2/3) */}
+        <Card title="გადახდები" href="/finance" className="md:col-span-2">
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* მარცხენა: დონატი და დავალიანება */}
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <Donut pct={paidPct} />
+                <div className="min-w-0 flex-1 space-y-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="size-3 shrink-0 rounded-sm bg-green-600" />
+                    <span>
+                      გადახდილი <b>{residentsPaid}</b>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="size-3 shrink-0 rounded-sm bg-red-300" />
+                    <span>
+                      დავალიანებაში <b>{residentsInDebt}</b>
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    სულ მობინადრე: {residentsTotal}
                   </div>
                 </div>
-              ))}
+              </div>
+
+              <div className="border-t pt-3">
+                <div className="text-xs text-muted-foreground">დავალიანების ოდენობა</div>
+                <div className={`text-2xl font-bold ${totalDebt > 0 ? "text-red-600" : ""}`}>
+                  {money(totalDebt)}
+                </div>
+              </div>
             </div>
-          )}
-          {offRows.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              არ არის: {offRows.length} (დასვენება/შვებულება/გაცდენა)
-            </p>
-          )}
+
+            {/* მარჯვენა: ამ თვის გადახდა და უდიდესი დავალიანებები */}
+            <div className="space-y-4">
+              <div>
+                <div className="mb-1 flex flex-wrap justify-between gap-x-2 text-xs text-muted-foreground">
+                  <span>ამ თვის გადახდა ({monthPct}%)</span>
+                  <span>
+                    {money(curPaid)} / {money(curDue)}
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded bg-muted">
+                  <div
+                    className="h-full bg-green-500"
+                    style={{ width: `${Math.min(monthPct, 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              {debtors.length > 0 && (
+                <ul className="space-y-1.5 border-t pt-3 text-sm">
+                  {debtors.slice(0, 5).map((d) => (
+                    <li key={d.id} className="flex justify-between gap-2">
+                      <span className="min-w-0">
+                        {propName.get(d.id)}{" "}
+                        <span className="text-muted-foreground">· {d.months} თვე</span>
+                      </span>
+                      <b className="whitespace-nowrap text-red-600">{money(d.total)}</b>
+                    </li>
+                  ))}
+                  {debtors.length > 5 && (
+                    <li className="text-muted-foreground">
+                      + კიდევ {debtors.length - 5} ობიექტი
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
+          </div>
         </Card>
 
-        {/* დავალებები */}
+        {/* ზედა რიგი: კვირის გეგმა (1/3) */}
         <Card title="კვირის გეგმა" href="/operations/plan">
           <div className="grid grid-cols-3 gap-3">
             <Big value={String(todo)} label="გასაკეთებელი" />
@@ -348,7 +346,30 @@ async function Content() {
           )}
         </Card>
 
-        {/* ინციდენტები */}
+        {/* ქვედა რიგი: დღევანდელი ცვლა */}
+        <Card title="დღევანდელი ცვლა" href="/staff">
+          {groups.length === 0 ? (
+            <p className="text-sm text-muted-foreground">დღეს ცვლა მონიშნული არ არის</p>
+          ) : (
+            <div className="space-y-2 text-sm">
+              {groups.map((g) => (
+                <div key={g.key}>
+                  <div className="text-xs text-muted-foreground">{shiftLabels[g.key]}</div>
+                  <div className="font-medium">
+                    {g.list.map((a) => empName.get(a.employee_id) ?? "—").join(", ")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {offRows.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              არ არის: {offRows.length} (დასვენება/შვებულება/გაცდენა)
+            </p>
+          )}
+        </Card>
+
+        {/* ქვედა რიგი: ტექნიკური საკითხები */}
         <Card title="ტექნიკური საკითხები" href="/operations">
           <Big
             value={String(incCount ?? 0)}
@@ -369,7 +390,7 @@ async function Content() {
           )}
         </Card>
 
-        {/* დოკუმენტები */}
+        {/* ქვედა რიგი: დოკუმენტები */}
         <Card title="ხელშეკრულებებისა და დოკუმენტების ვადები" href="/documents?exp=1">
           {docRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">30 დღეში ვადა არავის გასდის</p>
