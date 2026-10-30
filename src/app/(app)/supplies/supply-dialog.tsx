@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { FormField } from "@/components/form-field";
 import { createClient } from "@/lib/supabase/client";
-import { saveSupply } from "../services/actions";
+import { saveSupply } from "./action";
 
 export type Supply = {
   id: string;

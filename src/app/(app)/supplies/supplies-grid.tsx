@@ -5,7 +5,7 @@ import { Download, Package, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { deleteSupply, setSupplyQty } from "../services/actions";
+import { deleteSupply, setSupplyQty } from "./action";
 import { SupplyDialog, type Supply } from "./supply-dialog";
 
 const money = (n: number) => `${(Math.round(n * 100) / 100).toFixed(2)} ₾`;
@@ -29,7 +29,6 @@ export function SuppliesGrid({
   );
 
   const order = opt.filter((i) => i.quantity_needed > 0);
-  const total = order.reduce((s, i) => s + (i.unit_price ?? 0) * i.quantity_needed, 0);
 
    const t = q.trim().toLowerCase();
    const shown = opt.filter((i) => {
@@ -49,17 +48,6 @@ export function SuppliesGrid({
 
   return (
     <>
-      <div className="mb-4 grid grid-cols-2 gap-3">
-        <div className="rounded-lg border p-3">
-          <div className="text-xs text-muted-foreground">შესაკვეთი პოზიცია</div>
-          <div className="text-lg font-semibold">{order.length}</div>
-        </div>
-        <div className="rounded-lg border p-3">
-          <div className="text-xs text-muted-foreground">სავარაუდო ჯამი</div>
-          <div className="text-lg font-semibold">{money(total)}</div>
-        </div>
-      </div>
-
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input
           value={q}
@@ -76,8 +64,11 @@ export function SuppliesGrid({
           />
           მხოლოდ შესაკვეთი
         </label>
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
+          შესაკვეთი: <b className="text-foreground">{order.length}</b>
+        </span>
         <a
-          href="/services/supplies/export"
+          href="/supplies/export"
           className={`inline-flex h-11 items-center gap-2 rounded-md border px-3 text-sm ${
             order.length === 0 ? "pointer-events-none opacity-50" : ""
           }`}

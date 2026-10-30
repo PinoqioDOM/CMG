@@ -130,8 +130,6 @@ async function Content() {
     { count: incCount },
     { data: incs },
     { data: docs },
-    { data: tpl },
-    { data: logs },
     { data: resRows },
   ] = await Promise.all([
     supabase.from("payments_view").select("*").eq("year", cy).eq("month", cm),
@@ -164,12 +162,6 @@ async function Content() {
       .lte("expires_at", plus30)
       .order("expires_at")
       .limit(8),
-    supabase
-      .from("checklist_templates")
-      .select("id, position")
-      .eq("frequency", "daily")
-      .eq("is_active", true),
-    supabase.from("checklist_logs").select("template_id").eq("done_date", today),
     supabase.from("residents").select("property_id"),
   ]);
 
@@ -235,8 +227,6 @@ async function Content() {
   const expiredDocs = docRows.filter((d) => d.expires_at < today).length;
 
   // ---------- ჩეკლისტი ----------
-  const doneIds = new Set((logs ?? []).map((l) => l.template_id));
-
   const incidents = (incs ?? []) as Incident[];
 
   return (
