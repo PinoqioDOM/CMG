@@ -1,7 +1,7 @@
 "use client";
 
-import { useOptimistic, useState, useTransition } from "react";
-import { Download, Package, Pencil, Plus, Trash2 } from "lucide-react";
+import { useEffect, useOptimistic, useState, useTransition } from "react";
+import { Download, Package, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -23,6 +23,13 @@ export function SuppliesGrid({
   const [toDelete, setToDelete] = useState<Supply | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [, start] = useTransition();
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setLightbox(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
 
   const [opt, apply] = useOptimistic(items, (s, u: { id: string; qty: number }) =>
     s.map((i) => (i.id === u.id ? { ...i, quantity_needed: u.qty } : i))
@@ -198,14 +205,23 @@ export function SuppliesGrid({
 
       {lightbox && (
         <div
-          className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
           onClick={() => setLightbox(null)}
         >
+          <button
+            type="button"
+            onClick={() => setLightbox(null)}
+            aria-label="დახურვა"
+            className="absolute right-4 top-4 flex size-11 items-center justify-center rounded-full bg-white text-black shadow-lg hover:bg-white/90"
+          >
+            <X className="size-6" />
+          </button>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={lightbox}
             alt=""
-            className="max-h-full max-w-full rounded-lg bg-white object-contain"
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[90vh] max-w-[92vw] rounded-lg bg-white object-contain"
           />
         </div>
       )}

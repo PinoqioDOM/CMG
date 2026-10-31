@@ -31,6 +31,7 @@ function shift(ym: string, d: number) {
 
 const select =
   "id, title, description, category, status, priority, due_date, assigned_to, employees(full_name)";
+const itemSelect = "id, scope, period_start, title, done, recurring";
 
 function toTask(r: Row): PlanTask {
   const emp = Array.isArray(r.employees) ? r.employees[0] : r.employees;
@@ -66,11 +67,11 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   for (let ts = startTs; ts <= endTs; ts += 7 * 86400000) {
     weeks.push(Array.from({ length: 7 }, (_, i) => iso(ts + i * 86400000)));
   }
+  const weekStarts = weeks.map((w) => w[0]);
+  const monthStart = `${ym}-01`;
 
   const supabase = await createClient();
-  const weekStarts = weeks.map((w) => w[0]);
-
-  const [{ data: dated }, { data: undated }, { data: emps }, { data: items }, { data: reps }] =
+  const [{ data: dated }, { data: undated }, { data: emps }, { data: items }] =
     await Promise.all([
       supabase
         .from("tasks")
@@ -78,23 +79,18 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
         .gte("due_date", iso(startTs))
         .lte("due_date", iso(endTs))
         .limit(800),
-      supabase
-        .from("tasks")
-        .select(select)
-        .is("due_date", null)
-        .neq("status", "done")
-        .limit(200),
+      supabase.from("tasks").select(select).is("due_date", null).neq("status", "done").limit(200),
       supabase.from("employees").select("id, full_name").eq("is_active", true).order("full_name"),
       supabase
         .from("plan_items")
-        .select("id, scope, period_start, title, done")
-        .in("period_start", [`${ym}-01`, ...weekStarts])
-        .order("created_at"),
-      supabase
-        .from("day_reports")
-        .select("date, body")
-        .gte("date", iso(startTs))
-        .lte("date", iso(endTs)),
+        .select(itemSelect)
+        .or(
+          `and(scope.eq.month,period_start.eq.${monthStart}),` +
+            `and(scope.eq.week,period_start.in.(${weekStarts.join(",")})),` +
+            `and(scope.eq.report,period_start.gte.${iso(startTs)},period_start.lte.${iso(endTs)})`
+        )
+        .order("sort_order")
+        .limit(2000),
     ]);
 
   const tasks = [
@@ -103,17 +99,46 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   ].map(toTask);
 
   const planItems = (items ?? []) as PlanItem[];
-  const monthItems = planItems.filter(
-    (i) => i.scope === "month" && i.period_start === `${ym}-01`
-  );
-  const weekItems: Record<string, PlanItem[]> = {};
-  for (const i of planItems) {
-    if (i.scope === "week") (weekItems[i.period_start] ??= []).push(i);
+  let monthItems = planItems.filter((i) => i.scope === "month");
+
+  // ახალი თვე: წინა თვის „ყოველთვიური" პუნქტები გადმოდის
+  if (monthItems.length === 0 && ym <= shift(nowYM, 1)) {
+    const { data: src } = await supabase
+      .from("plan_items")
+      .select("period_start, title, sort_order")
+      .eq("scope", "month")
+      .eq("recurring", true)
+      .lt("period_start", monthStart)
+      .order("period_start", { ascending: false })
+      .limit(100);
+    const latest = src?.[0]?.period_start;
+    const rows = (src ?? [])
+      .filter((r) => r.period_start === latest)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((r, i) => ({
+        scope: "month",
+        period_start: monthStart,
+        title: r.title,
+        recurring: true,
+        done: false,
+        sort_order: i + 1,
+      }));
+    if (rows.length > 0) {
+      const { data: inserted } = await supabase
+        .from("plan_items")
+        .insert(rows)
+        .select(itemSelect);
+      monthItems = ((inserted ?? []) as PlanItem[]).sort(
+        (a, b) => a.title.localeCompare(b.title, "ka") * 0
+      );
+    }
   }
 
-  const reports: Record<string, string> = {};
-  for (const r of (reps ?? []) as { date: string; body: string | null }[]) {
-    reports[r.date] = r.body ?? "";
+  const weekItems: Record<string, PlanItem[]> = {};
+  const reportItems: Record<string, PlanItem[]> = {};
+  for (const i of planItems) {
+    if (i.scope === "week") (weekItems[i.period_start] ??= []).push(i);
+    if (i.scope === "report") (reportItems[i.period_start] ??= []).push(i);
   }
 
   return (
@@ -146,7 +171,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
         today={today}
         monthItems={monthItems}
         weekItems={weekItems}
-        reports={reports}
+        reportItems={reportItems}
       />
     </>
   );

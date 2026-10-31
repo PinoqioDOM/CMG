@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { AppShell } from "@/components/app-shell";
+import { Loader } from "@/components/loader";
 
 async function Shell({ children }: { children: React.ReactNode }) {
   await connection();
@@ -34,7 +35,7 @@ async function Shell({ children }: { children: React.ReactNode }) {
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <Suspense fallback={<div className="p-6 text-muted-foreground">იტვირთება...</div>}>
+    <Suspense fallback={<Loader fullscreen />}>
       <Shell>{children}</Shell>
     </Suspense>
   );

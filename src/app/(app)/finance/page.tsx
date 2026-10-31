@@ -128,18 +128,6 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
           >
             ASG ↗
           </a>
-          <a
-            href={`/finance/export?ym=${ym}`}
-            className="inline-flex h-11 items-center rounded-md border px-3 text-sm"
-          >
-            Excel: თვე
-          </a>
-          <a
-            href="/finance/export?all=1"
-            className="inline-flex h-11 items-center rounded-md border px-3 text-sm"
-          >
-            Excel: ყველა
-          </a>
         </div>
       }
     />

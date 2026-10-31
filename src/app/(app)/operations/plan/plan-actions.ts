@@ -12,10 +12,15 @@ function done() {
   return { ok: true as const };
 }
 
-export async function addPlanItem(scope: string, periodStart: string, title: string) {
-  const s = z.enum(["week", "month"]).safeParse(scope);
+export async function addPlanItem(
+  scope: string,
+  periodStart: string,
+  title: string,
+  recurring = false
+) {
+  const s = z.enum(["week", "month", "report"]).safeParse(scope);
   const p = day.safeParse(periodStart);
-  const t = z.string().trim().min(1).max(300).safeParse(title);
+  const t = z.string().trim().min(1).max(500).safeParse(title);
   if (!s.success || !p.success || !t.success) return { error: "არასწორი მონაცემი" } as const;
 
   const supabase = await createClient();
@@ -27,6 +32,7 @@ export async function addPlanItem(scope: string, periodStart: string, title: str
       scope: s.data,
       period_start: p.data,
       title: t.data,
+      recurring: s.data === "month" && recurring,
       sort_order: Math.floor(Date.now() / 1000),
       created_by: auth?.claims?.sub,
     })
@@ -51,9 +57,24 @@ export async function togglePlanItem(id: string, value: boolean) {
   return done();
 }
 
+export async function setPlanRecurring(id: string, value: boolean) {
+  const i = uuid.safeParse(id);
+  if (!i.success) return { error: "არასწორი მონაცემი" } as const;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("plan_items")
+    .update({ recurring: value })
+    .eq("id", i.data)
+    .select("id");
+  if (error) return { error: error.message } as const;
+  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" } as const;
+  return done();
+}
+
 export async function renamePlanItem(id: string, title: string) {
   const i = uuid.safeParse(id);
-  const t = z.string().trim().min(1).max(300).safeParse(title);
+  const t = z.string().trim().min(1).max(500).safeParse(title);
   if (!i.success || !t.success) return { error: "არასწორი მონაცემი" } as const;
 
   const supabase = await createClient();
@@ -73,27 +94,6 @@ export async function deletePlanItem(id: string) {
 
   const supabase = await createClient();
   const { data, error } = await supabase.from("plan_items").delete().eq("id", i.data).select("id");
-  if (error) return { error: error.message } as const;
-  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" } as const;
-  return done();
-}
-
-export async function saveReport(date: string, body: string) {
-  const d = day.safeParse(date);
-  const b = z.string().max(5000).safeParse(body);
-  if (!d.success || !b.success) return { error: "არასწორი მონაცემი" } as const;
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const { data, error } = await supabase
-    .from("day_reports")
-    .upsert(
-      { date: d.data, body: b.data, updated_by: user?.id, updated_at: new Date().toISOString() },
-      { onConflict: "date" }
-    )
-    .select("date");
   if (error) return { error: error.message } as const;
   if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" } as const;
   return done();

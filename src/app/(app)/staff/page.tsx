@@ -10,7 +10,6 @@ import { EmployeeList } from "./employee-list";
 import { AttendanceGrid, type Emp, type Rec } from "./attendance-grid";
 import { ContinueButton } from "./continue-button";
 import { AddToRoster } from "./roster-controls";
-import { ScheduleGenerator, type Pattern } from "./schedule-generator";
 import { ClearMonthButton } from "./clear-month-button";
 
 type SearchParams = Promise<{ tab?: string; ym?: string }>;
@@ -76,14 +75,13 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
     );
   }
 
-  const [{ data: recData }, { data: rosterData }, { data: patData }] = await Promise.all([
+  const [{ data: recData }, { data: rosterData }] = await Promise.all([
     supabase
       .from("attendance")
       .select("employee_id, date, shift_type, hours, status, note")
       .gte("date", `${ym}-01`)
       .lte("date", `${ym}-${String(days).padStart(2, "0")}`),
     supabase.from("attendance_roster").select("employee_id").eq("ym", ym),
-    supabase.from("schedule_patterns").select("employee_id, pattern"),
   ]);
 
   const records = (recData ?? []) as Rec[];
@@ -106,11 +104,6 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   const candidates = employees
     .filter((e) => e.is_active && e.position !== "manager" && !shownIds.has(e.id))
     .map((e) => ({ id: e.id, full_name: e.full_name }));
-
-  const patterns: Record<string, Pattern> = {};
-  (patData ?? []).forEach((p) => {
-    patterns[p.employee_id as string] = p.pattern as Pattern;
-  });
 
   return (
     <>
@@ -141,12 +134,6 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
         >
           გრაფიკის გენერატორი
         </Link>
-        <ScheduleGenerator
-          key={`${ym}-${shown.map((e) => e.id).join(",")}`}
-          ym={ym}
-          employees={shown.map((e) => ({ id: e.id, full_name: e.full_name }))}
-          patterns={patterns}
-        />
         <AddToRoster ym={ym} candidates={candidates} />
         <ContinueButton year={year} month={month} />
         <ClearMonthButton ym={ym} label={`${monthNames[month - 1]} ${year}`} />
