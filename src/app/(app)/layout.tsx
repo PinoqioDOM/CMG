@@ -1,5 +1,4 @@
-import { Suspense } from "react";
-import { redirect } from "next/navigation";
+import { Suspense } from "react"; import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { AppShell } from "@/components/app-shell";

@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { Suspense } from "react"; import { Loader } from "@/components/loader";
 import Link from "next/link";
 import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -154,7 +154,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
 
 export default function StaffPage({ searchParams }: { searchParams: SearchParams }) {
   return (
-    <Suspense fallback={<div className="p-6 text-muted-foreground">იტვირთება...</div>}>
+    <Suspense fallback={<Loader />}>
       <Content searchParams={searchParams} />
     </Suspense>
   );

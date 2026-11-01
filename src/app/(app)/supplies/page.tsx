@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { Suspense } from "react"; import { Loader } from "@/components/loader";
 import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
@@ -34,7 +34,7 @@ async function Content() {
 
 export default function SuppliesPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-muted-foreground">იტვირთება...</div>}>
+    <Suspense fallback={<Loader />}>
       <Content />
     </Suspense>
   );
