@@ -1,8 +1,9 @@
-import { Suspense } from "react"; import { Loader } from "@/components/loader";
+import { Suspense } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
+import { Loader } from "@/components/loader";
 import { monthNames } from "@/lib/labels";
 import { PlanBoard, type PlanItem, type PlanTask } from "./plan-board";
 
@@ -17,7 +18,6 @@ type Row = {
   priority: string;
   due_date: string | null;
   assigned_to: string | null;
-  employees: { full_name: string } | { full_name: string }[] | null;
 };
 
 const iso = (ts: number) => new Date(ts).toISOString().slice(0, 10);
@@ -29,23 +29,11 @@ function shift(ym: string, d: number) {
   return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`;
 }
 
-const select =
-  "id, title, description, category, status, priority, due_date, assigned_to, employees(full_name)";
+const select = "id, title, description, category, status, priority, due_date, assigned_to";
 const itemSelect = "id, scope, period_start, title, done, recurring";
 
 function toTask(r: Row): PlanTask {
-  const emp = Array.isArray(r.employees) ? r.employees[0] : r.employees;
-  return {
-    id: r.id,
-    title: r.title,
-    description: r.description,
-    category: r.category,
-    status: r.status,
-    priority: r.priority,
-    due_date: r.due_date,
-    assigned_to: r.assigned_to,
-    assignee: emp?.full_name ?? null,
-  };
+  return { ...r, assignee: null };
 }
 
 async function Content({ searchParams }: { searchParams: SearchParams }) {
@@ -71,32 +59,34 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   const monthStart = `${ym}-01`;
 
   const supabase = await createClient();
-  const [{ data: dated }, { data: undated }, { data: emps }, { data: items }] =
-    await Promise.all([
-      supabase
-        .from("tasks")
-        .select(select)
-        .gte("due_date", iso(startTs))
-        .lte("due_date", iso(endTs))
-        .limit(800),
-      supabase.from("tasks").select(select).is("due_date", null).neq("status", "done").limit(200),
-      supabase.from("employees").select("id, full_name").eq("is_active", true).order("full_name"),
-      supabase
-        .from("plan_items")
-        .select(itemSelect)
-        .or(
-          `and(scope.eq.month,period_start.eq.${monthStart}),` +
-            `and(scope.eq.week,period_start.in.(${weekStarts.join(",")})),` +
-            `and(scope.eq.report,period_start.gte.${iso(startTs)},period_start.lte.${iso(endTs)})`
-        )
-        .order("sort_order")
-        .limit(2000),
-    ]);
+  const [{ data: dated }, { data: undated }, { data: items }] = await Promise.all([
+    supabase
+      .from("tasks")
+      .select(select)
+      .gte("due_date", iso(startTs))
+      .lte("due_date", iso(endTs))
+      .order("created_at")
+      .limit(800),
+    supabase
+      .from("tasks")
+      .select(select)
+      .is("due_date", null)
+      .neq("status", "done")
+      .order("created_at")
+      .limit(200),
+    supabase
+      .from("plan_items")
+      .select(itemSelect)
+      .or(
+        `and(scope.eq.month,period_start.eq.${monthStart}),` +
+          `and(scope.eq.week,period_start.in.(${weekStarts.join(",")})),` +
+          `and(scope.eq.report,period_start.gte.${iso(startTs)},period_start.lte.${iso(endTs)})`
+      )
+      .order("sort_order")
+      .limit(2000),
+  ]);
 
-  const tasks = [
-    ...((dated ?? []) as unknown as Row[]),
-    ...((undated ?? []) as unknown as Row[]),
-  ].map(toTask);
+  const tasks = [...((dated ?? []) as Row[]), ...((undated ?? []) as Row[])].map(toTask);
 
   const planItems = (items ?? []) as PlanItem[];
   let monthItems = planItems.filter((i) => i.scope === "month");
@@ -124,13 +114,8 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
         sort_order: i + 1,
       }));
     if (rows.length > 0) {
-      const { data: inserted } = await supabase
-        .from("plan_items")
-        .insert(rows)
-        .select(itemSelect);
-      monthItems = ((inserted ?? []) as PlanItem[]).sort(
-        (a, b) => a.title.localeCompare(b.title, "ka") * 0
-      );
+      const { data: inserted } = await supabase.from("plan_items").insert(rows).select(itemSelect);
+      monthItems = (inserted ?? []) as PlanItem[];
     }
   }
 
@@ -167,7 +152,6 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
         ym={ym}
         weeks={weeks}
         tasks={tasks}
-        employees={(emps ?? []) as { id: string; full_name: string }[]}
         today={today}
         monthItems={monthItems}
         weekItems={weekItems}

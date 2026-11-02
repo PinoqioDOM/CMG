@@ -18,23 +18,15 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { Maximize2, Minimize2, Plus, Repeat, X } from "lucide-react";
+import { GripVertical, Maximize2, Minimize2, Plus, Repeat, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { monthNames } from "@/lib/labels";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { FormField } from "@/components/form-field";
-import { SelectField } from "@/components/native-fields";
-import { categoryLabels, monthNames, priorityLabels, taskStatusLabels } from "@/lib/labels";
-import {
-  createTask,
+  addTaskQuick,
   deleteTask,
+  renameTask,
   setTaskDate,
-  updateTask,
   updateTaskStatus,
 } from "../actions";
 import {
@@ -66,8 +58,11 @@ export type PlanItem = {
   recurring: boolean;
 };
 
-type Update = { id: string; due_date?: string | null; status?: PlanTask["status"] };
-type DialogState = { task?: PlanTask; date?: string } | null;
+type TaskAction =
+  | { type: "status"; id: string; status: PlanTask["status"] }
+  | { type: "date"; id: string; date: string | null }
+  | { type: "add"; task: PlanTask }
+  | { type: "remove"; id: string };
 
 const weekdayNames = [
   "ორშაბათი",
@@ -79,13 +74,6 @@ const weekdayNames = [
   "კვირა",
 ];
 const letters = ["M", "T", "W", "T", "F", "S", "S"];
-const statusCls: Record<string, string> = {
-  todo: "bg-muted",
-  in_progress: "bg-amber-100 text-amber-900",
-  done: "bg-green-100 text-green-800",
-};
-const toOptions = (m: Record<string, string>) =>
-  Object.entries(m).map(([value, label]) => ({ value, label }));
 
 // ---------- იზრდებადი ტექსტური ველი ----------
 function AutoTextarea({
@@ -327,56 +315,87 @@ function ItemList({
   );
 }
 
-// ---------- დავალების ბარათი ----------
-function Chip({
+// ---------- დავალების რიგი (To-Do) ----------
+function TaskRow({
   t,
-  onOpen,
   onToggle,
+  onRename,
+  onRemove,
 }: {
   t: PlanTask;
-  onOpen: (t: PlanTask) => void;
   onToggle: (t: PlanTask) => void;
+  onRename: (t: PlanTask, value: string) => void;
+  onRemove: (t: PlanTask) => void;
 }) {
-  const { setNodeRef, listeners, attributes, transform, isDragging } = useDraggable({
-    id: `task:${t.id}`,
-  });
+  const temp = t.id.startsWith("tmp-");
+  const { setNodeRef, transform, isDragging, listeners, attributes } =
+  useDraggable({ id: `task:${t.id}` });
+
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
       style={{
         transform: transform
           ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
           : undefined,
         zIndex: isDragging ? 50 : undefined,
       }}
-      onClick={() => onOpen(t)}
-      title={t.assignee ? `${t.title} · ${t.assignee}` : t.title}
-      className={`flex cursor-grab items-start gap-1 rounded px-1.5 py-1 text-xs leading-snug ${
-        statusCls[t.status]
-      } ${isDragging ? "opacity-80 shadow-lg" : ""}`}
+      className={`group flex items-start gap-1 rounded px-0.5 py-0.5 ${
+        temp ? "opacity-60" : ""
+      } ${isDragging ? "bg-background shadow-lg" : ""}`}
     >
+      <button
+        type="button"
+        {...listeners}
+        {...attributes}
+        disabled={temp}
+        aria-label="გადატანა"
+        className="mt-0.5 shrink-0 cursor-grab touch-none text-muted-foreground opacity-50 hover:opacity-100"
+      >
+        <GripVertical className="size-3.5" />
+      </button>
       <input
         type="checkbox"
         checked={t.status === "done"}
+        disabled={temp}
         onChange={() => onToggle(t)}
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
-        className="mt-0.5 size-3.5 shrink-0"
+        className="mt-1 size-4 shrink-0"
         aria-label="დასრულება"
       />
-      <span
-        className={`min-w-0 [overflow-wrap:anywhere] ${
-          t.status === "done" ? "line-through opacity-70" : ""
+      {t.priority === "high" && <span className="mt-0.5 text-xs">❗</span>}
+      <AutoTextarea
+        key={`${t.id}-${t.title}`}
+        defaultValue={t.title}
+        disabled={temp}
+        onBlur={(e) => onRename(t, e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+        }}
+        className={`min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 text-xs leading-snug outline-none [overflow-wrap:anywhere] focus:bg-muted ${
+          t.status === "done" ? "text-muted-foreground line-through" : ""
         }`}
+      />
+      <button
+        type="button"
+        onClick={() => onRemove(t)}
+        disabled={temp}
+        aria-label="წაშლა"
+        className="shrink-0 rounded p-0.5 text-muted-foreground opacity-60 hover:bg-muted md:opacity-0 md:group-hover:opacity-100"
       >
-        {t.priority === "high" ? "❗" : ""}
-        {t.title}
-      </span>
+        <X className="size-3.5" />
+      </button>
     </div>
   );
 }
+
+type TaskHandlers = {
+  onToggle: (t: PlanTask) => void;
+  onRename: (t: PlanTask, value: string) => void;
+  onRemove: (t: PlanTask) => void;
+};
 
 // ---------- დღის სვეტი ----------
 function DayColumn({
@@ -387,8 +406,7 @@ function DayColumn({
   tasks,
   reportItems,
   onAdd,
-  onOpen,
-  onToggle,
+  ...handlers
 }: {
   date: string;
   name: string;
@@ -396,11 +414,20 @@ function DayColumn({
   isToday: boolean;
   tasks: PlanTask[];
   reportItems: PlanItem[];
-  onAdd: (date: string) => void;
-  onOpen: (t: PlanTask) => void;
-  onToggle: (t: PlanTask) => void;
-}) {
+  onAdd: (date: string, title: string) => void;
+} & TaskHandlers) {
   const { setNodeRef, isOver } = useDroppable({ id: `day:${date}` });
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const el = inputRef.current;
+    if (!el) return;
+    const v = el.value.trim();
+    if (!v) return;
+    el.value = "";
+    onAdd(date, v);
+  }
 
   return (
     <div
@@ -430,36 +457,24 @@ function DayColumn({
       <div className="flex-1 space-y-1 border-t pt-2">
         <div className="text-[11px] font-medium text-muted-foreground">To-Do</div>
         {tasks.map((t) => (
-          <Chip key={t.id} t={t} onOpen={onOpen} onToggle={onToggle} />
+          <TaskRow key={t.id} t={t} {...handlers} />
         ))}
-        <button
-          type="button"
-          onClick={() => onAdd(date)}
-          className="flex items-center gap-1 pt-1 text-xs text-muted-foreground hover:text-foreground"
-        >
-          <Plus className="size-3.5" /> დავალება
-        </button>
+        <form onSubmit={submit} className="pt-1">
+          <Input ref={inputRef} placeholder="+ დავალება" className="h-8 text-xs" />
+        </form>
       </div>
     </div>
   );
 }
 
-function UndatedBox({
-  tasks,
-  onOpen,
-  onToggle,
-}: {
-  tasks: PlanTask[];
-  onOpen: (t: PlanTask) => void;
-  onToggle: (t: PlanTask) => void;
-}) {
+function UndatedBox({ tasks, ...handlers }: { tasks: PlanTask[] } & TaskHandlers) {
   const { setNodeRef, isOver } = useDroppable({ id: "undated" });
   return (
     <div ref={setNodeRef} className={`space-y-2 rounded-lg border p-3 ${isOver ? "bg-muted" : ""}`}>
       <div className="text-sm font-semibold">
         თარიღის გარეშე ({tasks.length}){" "}
         <span className="font-normal text-muted-foreground">
-          · გადაათრიე დღეზე, რომ თარიღი მიენიჭოს
+          · გადაათრიე ⋮⋮-ით დღეზე, რომ თარიღი მიენიჭოს
         </span>
       </div>
       <div className="grid gap-1.5 md:grid-cols-2 lg:grid-cols-3">
@@ -467,123 +482,10 @@ function UndatedBox({
           <p className="text-sm text-muted-foreground">ყველა დავალებას თარიღი აქვს</p>
         )}
         {tasks.map((t) => (
-          <Chip key={t.id} t={t} onOpen={onOpen} onToggle={onToggle} />
+          <TaskRow key={t.id} t={t} {...handlers} />
         ))}
       </div>
     </div>
-  );
-}
-
-// ---------- დავალების ფანჯარა ----------
-function TaskDialog({
-  state,
-  employees,
-  onClose,
-}: {
-  state: NonNullable<DialogState>;
-  employees: { id: string; full_name: string }[];
-  onClose: () => void;
-}) {
-  const t = state.task;
-  const [error, setError] = useState("");
-  const [pending, start] = useTransition();
-
-  function submit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    start(async () => {
-      const r = t ? await updateTask(t.id, fd) : await createTask(fd);
-      if (r?.error) setError(r.error);
-      else onClose();
-    });
-  }
-
-  function remove() {
-    if (!t || !confirm("დავალება სამუდამოდ წაიშლება. გავაგრძელო?")) return;
-    start(async () => {
-      const r = await deleteTask(t.id);
-      if (r?.error) setError(r.error);
-      else onClose();
-    });
-  }
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t ? "დავალების რედაქტირება" : "ახალი დავალება"}</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={submit} className="space-y-4">
-          <FormField label="სათაური" name="title" defaultValue={t?.title} required />
-          <div className="space-y-1.5">
-            <label htmlFor="description" className="text-sm font-medium">
-              აღწერა
-            </label>
-            <textarea
-              id="description"
-              name="description"
-              rows={3}
-              defaultValue={t?.description ?? ""}
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <FormField
-              label="თარიღი"
-              name="due_date"
-              type="date"
-              defaultValue={t?.due_date ?? state.date ?? ""}
-            />
-            <SelectField
-              label="შემსრულებელი"
-              name="assigned_to"
-              defaultValue={t?.assigned_to ?? ""}
-              options={[
-                { value: "", label: "—" },
-                ...employees.map((e) => ({ value: e.id, label: e.full_name })),
-              ]}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <SelectField
-              label="კატეგორია"
-              name="category"
-              defaultValue={t?.category ?? "general"}
-              options={toOptions(categoryLabels)}
-            />
-            <SelectField
-              label="პრიორიტეტი"
-              name="priority"
-              defaultValue={t?.priority ?? "normal"}
-              options={toOptions(priorityLabels)}
-            />
-          </div>
-          {t && (
-            <SelectField
-              label="სტატუსი"
-              name="status"
-              defaultValue={t.status}
-              options={toOptions(taskStatusLabels)}
-            />
-          )}
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <Button type="submit" className="h-11 w-full" disabled={pending}>
-            {pending ? "..." : "შენახვა"}
-          </Button>
-          {t && (
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-10 w-full text-red-600"
-              disabled={pending}
-              onClick={remove}
-            >
-              წაშლა
-            </Button>
-          )}
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -592,7 +494,6 @@ export function PlanBoard({
   ym,
   weeks,
   tasks,
-  employees,
   today,
   monthItems,
   weekItems,
@@ -601,24 +502,17 @@ export function PlanBoard({
   ym: string;
   weeks: string[][];
   tasks: PlanTask[];
-  employees: { id: string; full_name: string }[];
   today: string;
   monthItems: PlanItem[];
   weekItems: Record<string, PlanItem[]>;
   reportItems: Record<string, PlanItem[]>;
 }) {
-  const [opt, apply] = useOptimistic(tasks, (s, u: Update) =>
-    s.map((t) =>
-      t.id === u.id
-        ? {
-            ...t,
-            due_date: u.due_date !== undefined ? u.due_date : t.due_date,
-            status: u.status ?? t.status,
-          }
-        : t
-    )
-  );
-  const [dialog, setDialog] = useState<DialogState>(null);
+  const [opt, mutate] = useOptimistic(tasks, (s, a: TaskAction) => {
+    if (a.type === "add") return [...s, a.task];
+    if (a.type === "remove") return s.filter((t) => t.id !== a.id);
+    if (a.type === "date") return s.map((t) => (t.id === a.id ? { ...t, due_date: a.date } : t));
+    return s.map((t) => (t.id === a.id ? { ...t, status: a.status } : t));
+  });
   const [focus, setFocus] = useState<string | null>(null);
   const [, start] = useTransition();
 
@@ -634,20 +528,57 @@ export function PlanBoard({
   });
   const undated = opt.filter((t) => !t.due_date);
 
-  const inMonth = opt.filter((t) => t.due_date?.startsWith(ym));
-  const done = inMonth.filter((t) => t.status === "done").length;
-  const overdue = inMonth.filter(
-    (t) => t.status !== "done" && (t.due_date as string) < today
-  ).length;
+  const monthTasks = opt.filter((t) => t.due_date?.startsWith(ym));
+  const doneCount = monthTasks.filter((t) => t.status === "done").length;
+  const remaining = monthTasks.length - doneCount;
 
   const visible = focus ? weeks.filter((w) => w[0] === focus) : weeks;
 
   function toggle(t: PlanTask) {
     const status = t.status === "done" ? "todo" : "done";
     start(async () => {
-      apply({ id: t.id, status });
+      mutate({ type: "status", id: t.id, status });
       const r = await updateTaskStatus(t.id, status);
       if (r?.error) alert(r.error);
+    });
+  }
+
+  function rename(t: PlanTask, value: string) {
+    const v = value.trim();
+    if (!v || v === t.title) return;
+    start(async () => {
+      const r = await renameTask(t.id, v);
+      if ("error" in r) alert(r.error);
+    });
+  }
+
+  function remove(t: PlanTask) {
+    if (!confirm(`„${t.title}" წაიშლება. გავაგრძელო?`)) return;
+    start(async () => {
+      mutate({ type: "remove", id: t.id });
+      const r = await deleteTask(t.id);
+      if (r?.error) alert(r.error);
+    });
+  }
+
+  function add(date: string, title: string) {
+    start(async () => {
+      mutate({
+        type: "add",
+        task: {
+          id: `tmp-${Date.now()}`,
+          title,
+          description: null,
+          category: "general",
+          status: "todo",
+          priority: "normal",
+          due_date: date,
+          assigned_to: null,
+          assignee: null,
+        },
+      });
+      const r = await addTaskQuick(title, date);
+      if ("error" in r) alert(r.error);
     });
   }
 
@@ -660,30 +591,24 @@ export function PlanBoard({
     const task = opt.find((t) => t.id === id);
     if (!task || task.due_date === date) return;
     start(async () => {
-      apply({ id, due_date: date });
+      mutate({ type: "date", id, date });
       const r = await setTaskDate(id, date);
       if (r?.error) alert(r.error);
     });
   }
 
+  const handlers: TaskHandlers = { onToggle: toggle, onRename: rename, onRemove: remove };
+
   return (
     <>
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="mb-4 grid max-w-xl grid-cols-2 gap-3">
         <div className="rounded-lg border p-3">
-          <div className="text-xs text-muted-foreground">დავალება ამ თვეში</div>
-          <div className="text-lg font-semibold">{inMonth.length}</div>
+          <div className="text-xs text-muted-foreground">დარჩენილი</div>
+          <div className="text-lg font-semibold">{remaining}</div>
         </div>
         <div className="rounded-lg border p-3">
           <div className="text-xs text-muted-foreground">შესრულებული</div>
-          <div className="text-lg font-semibold text-green-700">{done}</div>
-        </div>
-        <div className="rounded-lg border p-3">
-          <div className="text-xs text-muted-foreground">დარჩენილი</div>
-          <div className="text-lg font-semibold">{inMonth.length - done}</div>
-        </div>
-        <div className="rounded-lg border p-3">
-          <div className="text-xs text-muted-foreground">ვადაგასული</div>
-          <div className={`text-lg font-semibold ${overdue ? "text-red-600" : ""}`}>{overdue}</div>
+          <div className="text-lg font-semibold text-green-700">{doneCount}</div>
         </div>
       </div>
 
@@ -700,7 +625,9 @@ export function PlanBoard({
                   }`}
                 >
                   {/* მარცხნივ: კვირის კალენდარი და კვირის გეგმა */}
-                  <div className={isFocus ? "grid gap-3 md:grid-cols-[210px_minmax(0,1fr)]" : "space-y-3"}>
+                  <div
+                    className={isFocus ? "grid gap-3 md:grid-cols-[210px_minmax(0,1fr)]" : "space-y-3"}
+                  >
                     <div className="rounded-lg border p-2">
                       <div className="mb-1 flex items-center justify-between text-xs">
                         <span className="font-semibold">
@@ -770,9 +697,8 @@ export function PlanBoard({
                           isToday={d === today}
                           tasks={byDate.get(d) ?? []}
                           reportItems={reportItems[d] ?? []}
-                          onAdd={(date) => setDialog({ date })}
-                          onOpen={(task) => setDialog({ task })}
-                          onToggle={toggle}
+                          onAdd={add}
+                          {...handlers}
                         />
                       ))}
                     </div>
@@ -781,11 +707,7 @@ export function PlanBoard({
               );
             })}
 
-            <UndatedBox
-              tasks={undated}
-              onOpen={(task) => setDialog({ task })}
-              onToggle={toggle}
-            />
+            <UndatedBox tasks={undated} {...handlers} />
           </div>
 
           {/* მარჯვნივ: თვის გეგმა */}
@@ -800,15 +722,6 @@ export function PlanBoard({
           </aside>
         </div>
       </DndContext>
-
-      {dialog && (
-        <TaskDialog
-          key={dialog.task?.id ?? `new-${dialog.date}`}
-          state={dialog}
-          employees={employees}
-          onClose={() => setDialog(null)}
-        />
-      )}
     </>
   );
 }

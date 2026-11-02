@@ -34,7 +34,7 @@ export async function createTask(formData: FormData) {
   });
   if (error) return { error: "ვერ შეინახა: " + error.message };
 
-  revalidatePath("/operations");
+  revalidatePath("/operations", "layout");
   return { ok: true };
 }
 
@@ -47,7 +47,7 @@ export async function updateTaskStatus(id: string, status: string) {
   const { error } = await supabase.from("tasks").update({ status: s.data }).eq("id", taskId.data);
   if (error) return { error: error.message };
 
-  revalidatePath("/operations");
+  revalidatePath("/operations", "layout");
   return { ok: true };
 }
 
@@ -81,7 +81,7 @@ export async function createIncident(formData: FormData) {
   });
   if (error) return { error: "ვერ შეინახა: " + error.message };
 
-  revalidatePath("/operations");
+  revalidatePath("/operations", "layout");
   return { ok: true };
 }
 
@@ -104,7 +104,7 @@ export async function updateIncidentStatus(id: string, status: string) {
     .eq("id", incidentId.data);
   if (error) return { error: error.message };
 
-  revalidatePath("/operations");
+  revalidatePath("/operations", "layout");
   return { ok: true };
 }
 
@@ -116,7 +116,7 @@ export async function deleteTask(id: string) {
   const { error } = await supabase.from("tasks").delete().eq("id", taskId.data);
   if (error) return { error: error.message };
 
-  revalidatePath("/operations");
+  revalidatePath("/operations", "layout");
   return { ok: true };
 }
 
@@ -136,7 +136,7 @@ export async function deleteIncident(id: string) {
 
   if (row?.photo_url) await supabase.storage.from("photos").remove([row.photo_url]);
 
-  revalidatePath("/operations");
+  revalidatePath("/operations", "layout");
   return { ok: true };
 }
 
@@ -190,4 +190,48 @@ export async function setTaskDate(id: string, date: string | null) {
 
   revalidatePath("/operations", "layout");
   return { ok: true };
+}
+
+export async function addTaskQuick(title: string, date: string | null) {
+  const t = z.string().trim().min(1).max(300).safeParse(title);
+  const d = z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.null()]).safeParse(date);
+  if (!t.success || !d.success) return { error: "არასწორი მონაცემი" } as const;
+
+  const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getClaims();
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .insert({
+      title: t.data,
+      due_date: d.data,
+      category: "general",
+      priority: "normal",
+      status: "todo",
+      created_by: auth?.claims?.sub,
+    })
+    .select("id");
+  if (error) return { error: "ვერ დაემატა: " + error.message } as const;
+  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" } as const;
+
+  revalidatePath("/operations", "layout");
+  return { ok: true } as const;
+}
+
+export async function renameTask(id: string, title: string) {
+  const i = z.string().uuid().safeParse(id);
+  const t = z.string().trim().min(1).max(300).safeParse(title);
+  if (!i.success || !t.success) return { error: "არასწორი მონაცემი" } as const;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("tasks")
+    .update({ title: t.data })
+    .eq("id", i.data)
+    .select("id");
+  if (error) return { error: error.message } as const;
+  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" } as const;
+
+  revalidatePath("/operations", "layout");
+  return { ok: true } as const;
 }
