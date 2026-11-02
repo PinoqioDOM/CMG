@@ -467,28 +467,6 @@ function DayColumn({
   );
 }
 
-function UndatedBox({ tasks, ...handlers }: { tasks: PlanTask[] } & TaskHandlers) {
-  const { setNodeRef, isOver } = useDroppable({ id: "undated" });
-  return (
-    <div ref={setNodeRef} className={`space-y-2 rounded-lg border p-3 ${isOver ? "bg-muted" : ""}`}>
-      <div className="text-sm font-semibold">
-        თარიღის გარეშე ({tasks.length}){" "}
-        <span className="font-normal text-muted-foreground">
-          · გადაათრიე ⋮⋮-ით დღეზე, რომ თარიღი მიენიჭოს
-        </span>
-      </div>
-      <div className="grid gap-1.5 md:grid-cols-2 lg:grid-cols-3">
-        {tasks.length === 0 && (
-          <p className="text-sm text-muted-foreground">ყველა დავალებას თარიღი აქვს</p>
-        )}
-        {tasks.map((t) => (
-          <TaskRow key={t.id} t={t} {...handlers} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ---------- მთავარი ----------
 export function PlanBoard({
   ym,
@@ -526,8 +504,7 @@ export function PlanBoard({
     if (!t.due_date) return;
     byDate.set(t.due_date, [...(byDate.get(t.due_date) ?? []), t]);
   });
-  const undated = opt.filter((t) => !t.due_date);
-
+  
   const monthTasks = opt.filter((t) => t.due_date?.startsWith(ym));
   const doneCount = monthTasks.filter((t) => t.status === "done").length;
   const remaining = monthTasks.length - doneCount;
@@ -706,8 +683,6 @@ export function PlanBoard({
                 </section>
               );
             })}
-
-            <UndatedBox tasks={undated} {...handlers} />
           </div>
 
           {/* მარჯვნივ: თვის გეგმა */}
