@@ -19,7 +19,7 @@ async function Content() {
     supabase
       .from("residents")
       .select("id, property_id, full_name, relation, phone, company_id, payment_method, is_primary, notes"),
-    supabase.from("properties").select("id, number, type"),
+    supabase.from("properties").select("id, number, type, monthly_fee"),
   ]);
 
   const props = [...(propData ?? [])].sort((a, b) =>
@@ -32,7 +32,11 @@ async function Content() {
       Number(b.is_primary) - Number(a.is_primary) ||
       a.full_name.localeCompare(b.full_name, "ka")
   );
-  const properties = props.map((p) => ({ id: p.id, number: p.number }));
+  const properties = props.map((p) => ({
+    id: p.id,
+    number: p.number,
+    fee: Number(p.monthly_fee),
+  }));
 
   return (
     <>

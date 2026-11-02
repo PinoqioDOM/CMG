@@ -4,12 +4,22 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
 const uuid = z.string().uuid();
 const method = z.enum(["cash", "transfer", "invoice", ""]);
 const idsSchema = z.array(uuid).min(1).max(200);
 
+const nowYM = (): [number, number] => {
+  const s = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tbilisi" });
+  return [Number(s.slice(0, 4)), Number(s.slice(5, 7))];
+};
+
 const schema = z.object({
-  property_id: z.string().uuid("აირჩიე ბინა ან სახლი"),
+  new_type: z.enum(["apartment", "house"]).optional(),
+  new_number: z.string().trim().max(6).optional(),
+  monthly_fee: z.string().optional(),
+  apply_fee: z.string().optional(),
   full_name: z.string().trim().min(1, "სახელი აუცილებელია").max(160),
   relation: z.enum(["owner", "tenant", "contact"]),
   phone: z.string().trim().max(40).optional(),
@@ -25,7 +35,46 @@ function done() {
   return { ok: true as const };
 }
 
+// ბინა/სახლი აქტიურია და მიმდინარე თვეში გადახდის ჩანაწერი აქვს
+async function syncProperty(supabase: Supabase, propertyId: string) {
+  const { data: p } = await supabase
+    .from("properties")
+    .select("id, monthly_fee, is_active")
+    .eq("id", propertyId)
+    .single();
+  if (!p) return;
+  if (!p.is_active) await supabase.from("properties").update({ is_active: true }).eq("id", p.id);
+  const [y, m] = nowYM();
+  await supabase.from("payments").upsert(
+    { property_id: p.id, year: y, month: m, amount_due: p.monthly_fee },
+    { onConflict: "property_id,year,month", ignoreDuplicates: true }
+  );
+}
+
+// ბინა/სახლი, სადაც მობინადრე აღარ არის: გამოირთვება და მომავალი გადაუხდელი თვეები იშლება
+async function cleanupEmpty(supabase: Supabase, propIds: string[]) {
+  const [y, m] = nowYM();
+  for (const pid of propIds) {
+    const { count } = await supabase
+      .from("residents")
+      .select("id", { count: "exact", head: true })
+      .eq("property_id", pid);
+    if ((count ?? 0) > 0) continue;
+    await supabase.from("properties").update({ is_active: false }).eq("id", pid);
+    await supabase
+      .from("payments")
+      .delete()
+      .eq("property_id", pid)
+      .eq("amount_paid", 0)
+      .or(`year.gt.${y},and(year.eq.${y},month.gte.${m})`);
+  }
+}
+
 export async function saveResident(id: string | null, formData: FormData) {
+  const pidRaw = String(formData.get("property_id") ?? "");
+  if (pidRaw !== "new" && !uuid.safeParse(pidRaw).success) {
+    return { error: "აირჩიე ბინა ან სახლი" };
+  }
   const parsed = schema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const v = parsed.data;
@@ -33,9 +82,79 @@ export async function saveResident(id: string | null, formData: FormData) {
   const rid = id ? uuid.safeParse(id) : null;
   if (rid && !rid.success) return { error: "არასწორი მონაცემი" };
 
+  let fee: number | null = null;
+  if (v.monthly_fee && v.monthly_fee.trim() !== "") {
+    fee = Number(v.monthly_fee);
+    if (!Number.isFinite(fee) || fee < 0) return { error: "გადასახადი არასწორია" };
+  }
+
+  const supabase = await createClient();
+  const [cy, cm] = nowYM();
+
+  // ძველი ბინა (თუ მობინადრე სხვა ბინაში გადაჰყავს)
+  let oldPropertyId: string | null = null;
+  if (rid?.success) {
+    const { data: old } = await supabase
+      .from("residents")
+      .select("property_id")
+      .eq("id", rid.data)
+      .single();
+    oldPropertyId = old?.property_id ?? null;
+  }
+
+  let propertyId: string;
+
+  if (pidRaw === "new") {
+    if (!v.new_type || !/^\d{1,4}$/.test(v.new_number ?? "")) {
+      return { error: "მიუთითე ახალი ბინის/სახლის ნომერი" };
+    }
+    const number = `${v.new_type === "apartment" ? "ბინა" : "სახლი"} #${Number(v.new_number)}`;
+    const { data: exists } = await supabase
+      .from("properties")
+      .select("id")
+      .eq("number", number)
+      .limit(1);
+    if (exists && exists.length > 0) return { error: `${number} უკვე არსებობს, აირჩიე სიიდან` };
+
+    const { data: created, error: ce } = await supabase
+      .from("properties")
+      .insert({ type: v.new_type, number, monthly_fee: fee ?? 0, is_active: true })
+      .select("id");
+    if (ce) return { error: "ვერ შეიქმნა: " + ce.message };
+    if (!created || created.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
+    propertyId = created[0].id as string;
+  } else {
+    propertyId = pidRaw;
+    if (fee !== null) {
+      const { data: cur } = await supabase
+        .from("properties")
+        .select("monthly_fee")
+        .eq("id", propertyId)
+        .single();
+      if (cur && Number(cur.monthly_fee) !== fee) {
+        const { data: up, error: ue } = await supabase
+          .from("properties")
+          .update({ monthly_fee: fee })
+          .eq("id", propertyId)
+          .select("id");
+        if (ue) return { error: "გადასახადი ვერ შეინახა: " + ue.message };
+        if (!up || up.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
+
+        // მიმდინარე და მომავალი თვეების გადასახდელი ახალი თანხით
+        if (v.apply_fee === "on") {
+          await supabase
+            .from("payments")
+            .update({ amount_due: fee })
+            .eq("property_id", propertyId)
+            .or(`year.gt.${cy},and(year.eq.${cy},month.gte.${cm})`);
+        }
+      }
+    }
+  }
+
   const primary = v.is_primary === "on";
   const row = {
-    property_id: v.property_id,
+    property_id: propertyId,
     full_name: v.full_name,
     relation: v.relation,
     phone: v.phone || null,
@@ -45,10 +164,8 @@ export async function saveResident(id: string | null, formData: FormData) {
     notes: v.notes || null,
   };
 
-  const supabase = await createClient();
-
   if (primary) {
-    let q = supabase.from("residents").update({ is_primary: false }).eq("property_id", v.property_id);
+    let q = supabase.from("residents").update({ is_primary: false }).eq("property_id", propertyId);
     if (rid?.success) q = q.neq("id", rid.data);
     await q;
   }
@@ -58,6 +175,9 @@ export async function saveResident(id: string | null, formData: FormData) {
     : await supabase.from("residents").insert(row).select("id");
   if (error) return { error: "ვერ შეინახა: " + error.message };
   if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
+
+  await syncProperty(supabase, propertyId);
+  if (oldPropertyId && oldPropertyId !== propertyId) await cleanupEmpty(supabase, [oldPropertyId]);
 
   return done();
 }
@@ -100,6 +220,7 @@ export async function createResidents(formData: FormData) {
   if (error) return { error: "ვერ შეინახა: " + error.message };
   if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
 
+  await syncProperty(supabase, property.data);
   return done();
 }
 
@@ -108,10 +229,17 @@ export async function deleteResidents(ids: string[]) {
   if (!list.success) return { error: "არასწორი მონაცემი" };
 
   const supabase = await createClient();
+  const { data: before } = await supabase
+    .from("residents")
+    .select("id, property_id")
+    .in("id", list.data);
+  const propIds = Array.from(new Set((before ?? []).map((r) => r.property_id as string)));
+
   const { data, error } = await supabase.from("residents").delete().in("id", list.data).select("id");
   if (error) return { error: error.message };
   if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
 
+  await cleanupEmpty(supabase, propIds);
   return done();
 }
 

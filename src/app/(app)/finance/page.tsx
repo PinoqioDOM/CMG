@@ -18,7 +18,13 @@ type SearchParams = Promise<{
   q?: string;
 }>;
 
-type Prop = { id: string; type: "apartment" | "house"; number: string };
+type Prop = {
+  id: string;
+  type: "apartment" | "house";
+  number: string;
+  is_active: boolean;
+  monthly_fee: number;
+};
 type Pay = {
   id: string;
   property_id: string;
@@ -90,7 +96,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   const tab = sp.tab === "debts" ? "debts" : sp.tab === "history" && isManager ? "history" : "month";
 
   const [{ data: propsData }, { data: resData }] = await Promise.all([
-    supabase.from("properties").select("id, type, number"),
+    supabase.from("properties").select("id, type, number, is_active, monthly_fee"),
     supabase
       .from("residents")
       .select("property_id, full_name, is_primary, payment_method")
@@ -269,11 +275,27 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
   }
 
   // ---------- თვე ----------
-  const { data: paysData } = await supabase
-    .from("payments_view")
-    .select("*")
-    .eq("year", year)
-    .eq("month", month);
+  const fetchMonth = () =>
+    supabase.from("payments_view").select("*").eq("year", year).eq("month", month);
+  let { data: paysData } = await fetchMonth();
+
+  // მიმდინარე და მომავალი თვეები: სია ყოველთვის სრულია (ყველა აქტიური ბინა/სახლი)
+  if (canEdit && ym >= nowYM && ym <= shift(nowYM, 12)) {
+    const have = new Set(((paysData ?? []) as Pay[]).map((p) => p.property_id));
+    const missing = props.filter((p) => p.is_active && !have.has(p.id));
+    if (missing.length > 0) {
+      await supabase.from("payments").upsert(
+        missing.map((p) => ({
+          property_id: p.id,
+          year,
+          month,
+          amount_due: p.monthly_fee,
+        })),
+        { onConflict: "property_id,year,month", ignoreDuplicates: true }
+      );
+      ({ data: paysData } = await fetchMonth());
+    }
+  }
 
   const all = ((paysData ?? []) as Pay[])
     .filter((p) => propMap.has(p.property_id))

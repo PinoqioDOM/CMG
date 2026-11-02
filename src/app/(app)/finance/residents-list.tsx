@@ -14,7 +14,7 @@ export function ResidentsList({
   properties,
 }: {
   residents: Resident[];
-  properties: { id: string; number: string }[];
+   properties: { id: string; number: string; fee: number }[];
 }) {
   const propName = useMemo(() => new Map(properties.map((p) => [p.id, p.number])), [properties]);
   const [q, setQ] = useState("");
@@ -22,6 +22,7 @@ export function ResidentsList({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pending, start] = useTransition();
+  const propFee = useMemo(() => new Map(properties.map((p) => [p.id, p.fee])), [properties]);
 
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -135,6 +136,7 @@ export function ResidentsList({
                 {[
                   `🏠 ${propName.get(r.property_id) ?? "—"}`,
                   relationLabels[r.relation],
+                  `${propFee.get(r.property_id) ?? 0} ₾/თვე`,
                   r.phone,
                   r.company_id ? `კოდი ${r.company_id}` : null,
                 ]
