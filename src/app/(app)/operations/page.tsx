@@ -25,7 +25,7 @@ async function Content({ searchParams }: { searchParams: SearchParams }) {
 
   let query = supabase
     .from("incidents")
-    .select("id, title, description, location, performer, status, priority, created_at, photo_url")
+    .select("id, title, description, location, performer, status, priority, created_at, photo_url, completed_on")
     .order("created_at", { ascending: false })
     .limit(500);
 

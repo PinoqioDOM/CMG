@@ -13,6 +13,7 @@ export type Incident = {
   priority: string;
   created_at: string;
   photo_url: string | null;
+  completed_on: string | null;
 };
 
 export function IncidentList({
@@ -34,7 +35,7 @@ export function IncidentList({
           <div key={i.id} className="space-y-2 rounded-lg border p-3">
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 font-medium leading-snug">{i.title}</div>
-              <IncidentStatusSelect id={i.id} status={i.status} />
+              <IncidentStatusSelect id={i.id} status={i.status} performer={i.performer} />
               <DeleteButton
                 action={deleteIncident.bind(null, i.id)}
                 title="ინციდენტის წაშლა"
@@ -44,7 +45,15 @@ export function IncidentList({
             <div className="flex flex-wrap gap-1.5 text-xs">
               <span className="rounded bg-muted px-2 py-0.5">📅 {date}</span>
               {i.location && <span className="rounded bg-muted px-2 py-0.5">📍 {i.location}</span>}
-              {i.performer && <span className="rounded bg-muted px-2 py-0.5">🔧 {i.performer}</span>}
+              {i.status === "resolved" ? (
+                <span className="rounded bg-green-100 px-2 py-0.5 text-green-800">
+                  ✓ გადაწყდა
+                  {i.completed_on ? ` ${i.completed_on.split("-").reverse().slice(0, 2).join(".")}` : ""}
+                  {i.performer ? ` · ${i.performer}` : ""}
+                </span>
+              ) : (
+                i.performer && <span className="rounded bg-muted px-2 py-0.5">🔧 {i.performer}</span>
+              )}
               {i.priority === "high" && (
                 <span className="rounded bg-red-100 px-2 py-0.5 text-red-700">
                   {priorityLabels.high}

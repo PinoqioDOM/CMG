@@ -85,24 +85,42 @@ export async function createIncident(formData: FormData) {
   return { ok: true };
 }
 
-export async function updateIncidentStatus(id: string, status: string) {
+export async function updateIncidentStatus(
+  id: string,
+  status: string,
+  resolvedOn?: string,
+  resolvedBy?: string
+) {
   const s = z.enum(["open", "in_progress", "resolved"]).safeParse(status);
   const incidentId = z.string().uuid().safeParse(id);
-  if (!s.success || !incidentId.success) return { error: "არასწორი მონაცემი" };
+  const day = z
+    .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.literal("")])
+    .optional()
+    .safeParse(resolvedOn);
+  const by = z.string().trim().max(120).optional().safeParse(resolvedBy);
+  if (!s.success || !incidentId.success || !day.success || !by.success) {
+    return { error: "არასწორი მონაცემი" };
+  }
 
   const resolved = s.data === "resolved";
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tbilisi" });
+  const date = day.data || today;
+
+  const patch: Record<string, unknown> = {
+    status: s.data,
+    resolved_at: resolved ? `${date}T12:00:00+04:00` : null,
+    completed_on: resolved ? date : null,
+  };
+  if (resolved && by.data) patch.performer = by.data;
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("incidents")
-    .update({
-      status: s.data,
-      resolved_at: resolved ? new Date().toISOString() : null,
-      completed_on: resolved ? today : null,
-    })
-    .eq("id", incidentId.data);
+    .update(patch)
+    .eq("id", incidentId.data)
+    .select("id");
   if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: "ცვლილების უფლება არ გაქვს" };
 
   revalidatePath("/operations", "layout");
   return { ok: true };
